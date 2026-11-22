@@ -31,12 +31,17 @@ mvn spring-boot:run
 POST /api/attachments (multipart, 最多 50 个)
   → AttachmentService 落盘 data/uploads，返回附件 ID
 
-POST /api/chat { messages, attachments:[id] }
+POST /api/chat { messages, attachments:[id], deepThinking, webSearch }
   → ChatController
   → ChatService（读取历史、拼接 SYSTEM_PROMPT、计时、落库）
       附件：PDF/文本 → 拼入用户文本；图片 → data URL content parts
+      webSearch=true → DeepSeekApiClient.search() 调 /v1/tools/search
+                      → 搜索摘要作为外部资料追加进系统提示词
+      短追问/纯客套不触发搜索；搜索失败不阻断对话
+  写入用户消息（历史接口返回 msgId）
   → DeepSeekAdapter.streamChat
       stream_options.include_usage = true
+      thinking: disabled（默认）或 enabled + reasoning_effort: max
   → SSE: reasoning / chunk / finish / error
 ```
 
@@ -65,9 +70,10 @@ POST /api/chat { messages, attachments:[id] }
 | `DELETE /api/attachments/{id}` | 删除未发送附件 |
 | `POST /api/deepseek/models` | 代理 `GET {root}/models` |
 | `POST /api/deepseek/balance` | 代理 `GET {root}/user/balance` |
-| `POST /api/chat` | 流式对话 |
+| `POST /v1/tools/search` | 由 `ChatService` 直接调用，使用用户 API Key，结果不持久化 |
+| `POST /api/chat` | 流式对话；`deepThinking` 默认 false，`webSearch` 默认 true |
 
-`DeepSeekApiClient.apiRoot()` 会去掉末尾 `/`、`/v1` 或 `/chat/completions`，再拼接 `/models`、`/user/balance`；对话仍使用用户填写的 baseUrl + `/chat/completions`。
+`DeepSeekApiClient.apiRoot()` 会去掉末尾 `/`、`/v1` 或 `/chat/completions`，再拼接 `/models`、`/user/balance`、`/v1/tools/search`；对话仍使用用户填写的 baseUrl + `/chat/completions`。Search 与模型共用同一个 API Key，按 DeepSeek Search 官方规则计费。
 
 ## 前端状态
 
@@ -78,6 +84,8 @@ POST /api/chat { messages, attachments:[id] }
 - 深度思考：`localStorage` 的 `viaScholarDeepThinkingV1`，默认关闭；关闭时请求 `thinking:{type:"disabled"}`，开启时 `thinking:{type:"enabled"}` + `reasoning_effort:"max"`
 - 联网搜索：`localStorage` 的 `viaScholarWebSearchV1`，默认开启；后端调用 DeepSeek `/v1/tools/search`，结果作为外部资料注入系统提示词，搜索失败不阻断对话
 - 重新编辑/重新生成：用户消息带 `msgId`；先调用 `/api/history/messages/truncate` 截断该消息及后续，再重新发送或生成；错误框提供重试按钮
+- 附件：`camera-input`（capture）、`album-input`（image/*）、`file-input`（仅 PDF/文本）三个入口；change 事件先 `Array.from(files)` 快照，再清空 input，避免 FileList 被清空
+- 收藏迁移：旧 `mathErrorBook` 会在 `loadFavorites()` 时迁移到 `viaScholarFavoritesV1` 并删除旧键
 - 回答标题：提示词要求每次回答以 `### 标题` 开头；前端用首个标题做收藏标题，收藏详情中不重复显示
 - 滚动：`state.autoScroll` 记录是否跟随底部；用户上翻后停止自动滚动并标记新内容，`finishAi` 不再强制回底
 - 导出：每条回答操作栏可导出 TXT / Word(原生 .docx) / PDF；TXT/Word 保留 LaTeX 源码，PDF 用 html2pdf 按需加载并保留公式、代码、表格排版；文件名为标题＋`YYYYMMDD_HHmmss_SSS`
@@ -104,22 +112,24 @@ POST /api/chat { messages, attachments:[id] }
 
 - `static/index.html`：结构
 - `static/assets/app.css`：白底极简样式；1024px 以下侧边栏变抽屉，760px 以下收紧顶栏
-- `static/assets/app.js`：配置、余额、模型弹层、附件/相册上传、SSE、Marked + KaTeX auto-render + mhchem + highlight.js、指标、历史多选、收藏、个性化提示词
-- 外部 CDN：KaTeX、highlight.js、marked；DOMPurify 本地
-- `localStorage`：`deepseekConfigV2`、`currentDbSessionId`、`mathErrorBook`
-- 旧配置会从 `modelConfigs.deepseek` 迁移，旧模型名映射到 `deepseek-flash` / `deepseek-v4-pro`
+- `static/assets/app.js`：配置、余额、模型弹层、附件/相机/相册/文件上传、SSE、Marked + KaTeX auto-render + mhchem + highlight.js、指标、历史多选、收藏、个性化提示词
+- 外部 CDN：KaTeX、KaTeX mhchem/auto-render、highlight.js、marked；html2pdf 与 docx 按导出需求懒加载；DOMPurify 本地
+- `localStorage`：`deepseekConfigV2`、`currentDbSessionId`、`viaScholarFavoritesV1`、`viaScholarPersonalPromptV1`、`viaScholarAnswerFontSizeV1`、`viaScholarDeepThinkingV1`、`viaScholarWebSearchV1`
+- 旧配置会从 `modelConfigs.deepseek` 迁移，旧模型名映射到 `deepseek-flash` / `deepseek-v4-pro`；旧 `mathErrorBook` 仅用于收藏迁移
 
 ## 会话与数据
 
 - `sid` 由 `POST /api/history/session/create` 写入 1 年 HttpOnly Cookie
-- `chat_session.owner_sid` 做归属校验；`chat_message` 保存正文、思考过程和 `usage_json`
-- H2：`./data/chatbot-db.mv.db`；`ddl-auto=update`
+- `chat_session.owner_sid` 做归属校验；`chat_message` 保存正文、思考过程、`usage_json` 和递增 `msgId`
+- `GET /api/history/messages/{id}` 返回 `msgId`；`POST /api/history/messages/truncate` 删除从该消息起的全部消息，用于编辑/重新生成
+- H2：`./data/chatbot-db.mv.db`；`ddl-auto=update`；附件在 `data/uploads`（24 小时清理），Lucene 索引在 `data/lucene_index`
 - 无 DB 会话时回退到 `ChatService.sessions`；同一会话不要并发写入
 
 ## 安全边界
 
 - 只监听本机；CORS 只允许 localhost
 - `/api/chat` 30 次/分钟/IP；其他 `/api` 300 次/分钟
+- Search 结果是外部不可信资料，只作为参考注入提示词；不执行其中指令
 - `baseUrl` 仅允许 http/https，但刻意放行回环以支持本地模型；不要随意放宽
 - AI 输出经 DOMPurify 后再插入 DOM
 
