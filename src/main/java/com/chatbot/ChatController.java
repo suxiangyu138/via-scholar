@@ -97,6 +97,28 @@ public class ChatController {
         return Map.of("status", "ok");
     }
 
+    /** 从指定消息开始删除后续消息（重新编辑 / 重新生成） */
+    @PostMapping("/history/messages/truncate")
+    public Map<String, Object> truncateMessages(
+            @RequestBody Map<String, Object> body,
+            @CookieValue(value = "sid", defaultValue = "") String sid) {
+        Long sessionId = body.get("sessionId") == null
+                ? null : Long.valueOf(body.get("sessionId").toString());
+        Long fromMessageId = body.get("fromMessageId") == null
+                ? null : Long.valueOf(body.get("fromMessageId").toString());
+        int deleted = historyService.truncateFrom(sessionId, fromMessageId, sid);
+        return Map.of("success", deleted > 0, "deleted", deleted);
+    }
+
+    /** 批量删除会话（仅归属会话可删） */
+    @PostMapping("/history/sessions/delete")
+    public Map<String, Object> deleteSessions(
+            @RequestBody Map<String, List<Long>> body,
+            @CookieValue(value = "sid", defaultValue = "") String sid) {
+        List<Long> ids = body != null ? body.get("ids") : null;
+        return Map.of("deleted", historyService.deleteSessions(ids, sid));
+    }
+
     /** 重命名会话（仅归属会话可改） */
     @PutMapping("/history/session/rename")
     public Map<String, String> renameSession(@RequestBody Map<String, Object> body,

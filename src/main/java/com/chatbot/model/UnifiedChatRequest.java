@@ -54,6 +54,12 @@ public class UnifiedChatRequest {
     private Long sessionId;
     /** 本轮消息附带的附件 ID（通过 /api/attachments 上传） */
     private List<String> attachments;
+    /** 用户个性化偏好，仅影响表达方式，不覆盖系统规则 */
+    private String customInstructions;
+    /** 是否开启深度思考；开启时使用 max 思考等级 */
+    private boolean deepThinking;
+    /** 是否联网搜索，默认开启 */
+    private boolean webSearch = true;
 
     public String getProvider() { return provider; }
     public void setProvider(String v) { provider = v; }
@@ -81,6 +87,12 @@ public class UnifiedChatRequest {
     public void setSessionId(Long v) { sessionId = v; }
     public List<String> getAttachments() { return attachments; }
     public void setAttachments(List<String> v) { attachments = v; }
+    public String getCustomInstructions() { return customInstructions; }
+    public void setCustomInstructions(String v) { customInstructions = v; }
+    public boolean isDeepThinking() { return deepThinking; }
+    public void setDeepThinking(boolean v) { deepThinking = v; }
+    public boolean isWebSearch() { return webSearch; }
+    public void setWebSearch(boolean v) { webSearch = v; }
 
     /** @deprecated 使用 getStage() */
     @Deprecated

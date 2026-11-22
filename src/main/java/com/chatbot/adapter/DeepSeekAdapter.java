@@ -20,11 +20,16 @@ public class DeepSeekAdapter extends BaseModelAdapter {
 
     @Override
     protected String buildNativeBody(UnifiedChatRequest req) throws Exception {
-        return buildOpenAiBody(req, true);
+        return buildOpenAiBody(req, true, true);
     }
 
     static String buildOpenAiBody(UnifiedChatRequest req, boolean includeUsage)
             throws Exception {
+        return buildOpenAiBody(req, includeUsage, false);
+    }
+
+    static String buildOpenAiBody(UnifiedChatRequest req, boolean includeUsage,
+                                  boolean includeThinking) throws Exception {
         ObjectNode root = MAPPER.createObjectNode();
         root.put("model", req.getModelName());
         root.put("stream", true);
@@ -33,6 +38,13 @@ public class DeepSeekAdapter extends BaseModelAdapter {
         }
         if (req.getMaxTokens() != null) {
             root.put("max_tokens", req.getMaxTokens());
+        }
+        if (includeThinking) {
+            ObjectNode thinking = root.putObject("thinking");
+            thinking.put("type", req.isDeepThinking() ? "enabled" : "disabled");
+            if (req.isDeepThinking()) {
+                root.put("reasoning_effort", "max");
+            }
         }
         if (includeUsage) {
             root.putObject("stream_options").put("include_usage", true);
@@ -57,6 +69,6 @@ public class DeepSeekAdapter extends BaseModelAdapter {
     /** 其它 OpenAI 兼容厂商使用的旧入口，默认不请求 usage。 */
     static String buildOpenAiBody(UnifiedChatRequest req, String defaultBase)
             throws Exception {
-        return buildOpenAiBody(req, false);
+        return buildOpenAiBody(req, false, false);
     }
 }

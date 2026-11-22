@@ -16,6 +16,11 @@ const FALLBACK_MODELS = [
     inputModalities: ['text'] }
 ];
 
+/* DeepSeek 官方价目以美元计价，界面按固定汇率折算成人民币，实际以账单为准 */
+const USD_TO_CNY = 7.1;
+const DEFAULT_ANSWER_FONT_SIZE = 14;
+const MIN_ANSWER_FONT_SIZE = 12;
+const MAX_ANSWER_FONT_SIZE = 22;
 const MAX_ATTACHMENTS = 50;
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 100 * 1024 * 1024;
@@ -26,13 +31,24 @@ const TEXT_EXT = new Set(['pdf', 'txt', 'md', 'markdown', 'csv', 'json', 'html',
 const LS = {
   config: 'deepseekConfigV2',
   session: 'currentDbSessionId',
-  errorBook: 'mathErrorBook'
+  favorites: 'viaScholarFavoritesV1',
+  legacySaved: 'mathErrorBook',
+  personalPrompt: 'viaScholarPersonalPromptV1',
+  answerFontSize: 'viaScholarAnswerFontSizeV1',
+  deepThinking: 'viaScholarDeepThinkingV1',
+  webSearch: 'viaScholarWebSearchV1'
 };
 
 const AVATAR_SVG = '<img src="/assets/brand-mark-black.png" alt="">';
 const TRASH_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M10 4h4M6 7l1 13h10l1-13M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const COPY_SVG = '<svg viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
 const BOOKMARK_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="M6 4h12v17l-6-4-6 4V4Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+const EXPORT_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 4v11M7 10l5 5 5-5M5 20h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const EDIT_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="m4 16-.7 4.7L8 20l11-11-3-3L4 16Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m13.5 6.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+const REGEN_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const HTML2PDF_URL = 'https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.3/dist/html2pdf.bundle.min.js';
+const DOCX_URL = 'https://cdn.jsdelivr.net/npm/docx@9.5.1/dist/index.iife.js';
+const scriptLoads = Object.create(null);
 
 const state = {
   config: null,
@@ -45,9 +61,22 @@ const state = {
   currentAi: null,
   lastQuestion: '',
   lastAnswer: '',
-  errorBook: [],
-  savedIndex: -1,
+  favorites: [],
+  favoriteIndex: -1,
+  historySessions: [],
+  historyEdit: false,
+  selectedSessions: new Set(),
+  personalPrompt: '',
+  answerFontSize: DEFAULT_ANSWER_FONT_SIZE,
+  deepThinking: false,
+  webSearch: true,
   balanceLoading: false,
+  autoScroll: true,
+  lastScrollTop: 0,
+  hasNewContent: false,
+  exportAi: null,
+  exporting: false,
+  pendingEdit: null,
   attachments: [],
   uploading: false,
   attachSeq: 0,
@@ -76,19 +105,29 @@ function toast(message) {
 function setupMarked() {
   if (!window.marked) return;
   window.marked.use({
-    breaks: true,
+    breaks: false,
     gfm: true,
     renderer: {
       code({ text, lang }) {
         const code = text == null ? '' : String(text);
-        const language = (lang || '').trim().split(/\s+/)[0];
-        let body = escapeHtml(code);
-        if (window.hljs && language && window.hljs.getLanguage(language)) {
+        let language = (lang || '').trim().split(/\s+/)[0].toLowerCase();
+        let body = '';
+        if (window.hljs) {
           try {
-            body = window.hljs.highlight(code, { language, ignoreIllegals: true }).value;
+            if (language && window.hljs.getLanguage(language)) {
+              body = window.hljs.highlight(code, {
+                language: language, ignoreIllegals: true
+              }).value;
+            } else if (code.length <= 20000) {
+              const auto = window.hljs.highlightAuto(code);
+              body = auto.value;
+              if (!language) language = auto.language || '';
+            }
           } catch (_) { /* 保持转义文本 */ }
         }
-        return '<pre><code class="hljs">' + body + '</code></pre>';
+        if (!body) body = escapeHtml(code);
+        const cls = 'hljs' + (language ? ' language-' + escapeHtml(language) : '');
+        return '<pre><code class="' + cls + '">' + body + '</code></pre>';
       }
     }
   });
@@ -98,109 +137,137 @@ function sanitizeHtml(html) {
   if (!window.DOMPurify) return escapeHtml(html);
   try {
     return window.DOMPurify.sanitize(html, {
-      USE_PROFILES: { html: true, mathMl: true, svg: true }
+      USE_PROFILES: { html: true, mathMl: true, svg: true },
+      ADD_TAGS: ['annotation', 'semantics'],
+      ADD_ATTR: ['encoding']
     });
   } catch (_) {
     return escapeHtml(html);
   }
 }
 
-function cleanLeakedHtml(text) {
-  text = text.replace(/<span[^>]*class="katex[^"]*"[^>]*>/g, '');
-  text = text.replace(/<\/span>/g, '');
-  text = text.replace(/<math[^>]*>/g, '');
-  text = text.replace(/<\/math>/g, '');
-  text = text.replace(/<semantics>[^<]*<\/semantics>/g, '');
-  text = text.replace(/<annotation[^>]*>[\s\S]*?<\/annotation>/g, '');
-  text = text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-  return text;
+function prepareMarkdown(text) {
+  const codeSegments = [];
+  const mathSegments = [];
+  const token = 'MATHSEG' + Math.random().toString(36).slice(2).toUpperCase() + '_';
+  const stashCode = (match) => {
+    codeSegments.push(match);
+    return token + 'C' + (codeSegments.length - 1) + 'X';
+  };
+  const stashMath = (match) => {
+    mathSegments.push(match);
+    return token + 'M' + (mathSegments.length - 1) + 'X';
+  };
+
+  let out = text.replace(/```[\s\S]*?```/g, stashCode);
+  out = out.replace(/~~~[\s\S]*?~~~/g, stashCode);
+  out = out.replace(/`[^`\n]*`/g, stashCode);
+  out = out.replace(/\\\[([\s\S]*?)\\\]/g, (m, inner) => stashMath('$$' + inner + '$$'));
+  out = out.replace(/\\\(([\s\S]*?)\\\)/g, (m, inner) => stashMath('$' + inner + '$'));
+  out = out.replace(/\$\$[\s\S]*?\$\$/g, stashMath);
+  out = out.replace(/(?<!\$)\$[^$\n]+\$(?!\$)/g, stashMath);
+  out = out.replace(/\*\*([^*\n]+?)\*\*/g, '<strong>$1</strong>');
+
+  codeSegments.forEach((segment, index) => {
+    out = out.split(token + 'C' + index + 'X').join(segment);
+  });
+  return { text: out, math: mathSegments, token: token };
 }
 
-function cleanLatexText(raw) {
-  let text = raw;
-  text = text.replace(/\$\$([\s\S]*?)\$\$/g, function (m, inner) {
-    let cleaned = inner.replace(/\n{3,}/g, '\n\n').replace(/[ \t]+$/gm, '');
-    if (!/\\\\/.test(cleaned) && !/\\begin/.test(cleaned)) {
-      cleaned = cleaned.replace(/\n+/g, ' ');
-    }
-    return '$$' + cleaned + '$$';
+function restoreMath(html, prepared) {
+  let out = html;
+  prepared.math.forEach((segment, index) => {
+    out = out.split(prepared.token + 'M' + index + 'X').join(segment);
   });
-  text = text.replace(/[\u200b\u200c\u200d\u200e\u200f\ufeff]/g, '');
-  text = text.replace(/\b(a|b|c|x|y|z|S|P|A|B|C|t|r)\s+(\d+)\b/g, '$1_$2');
-  text = text.replace(/\b(a|b|c|x|y|z|S|P|A|B|C|t|r)\s+(n)(\W|$)/g, '$1_n$3');
-  text = text.replace(/\u3000/g, ' ');
-  text = text.replace(/\\\[([\s\S]*?)\\\]/g, '$$$$$1$$$$');
-  text = text.replace(/\\\(([\s\S]*?)\\\)/g, '$$1$');
-  return text;
+  return out;
 }
 
-function autoWrapBareLatex(text) {
-  text = text.replace(/(\\(?:frac|sqrt|sum|int|lim|infty|pm|mp|times|div|cdot|leq|geq|neq|approx|equiv|sim|partial|nabla|forall|exists|in|notin|subset|subseteq|cup|cap|angle|triangle|alpha|beta|gamma|delta|epsilon|theta|lambda|mu|pi|sigma|omega|mathbf|mathbb|mathcal|bar|hat|vec|dot|widetilde|widehat|overline|underline|operatorname|text|begin|end|left|right)\b[^\n$<>]*)/g,
-    function (m) {
-      if (/<span|<div|class="katex/.test(m)) return m;
-      try {
-        return window.katex.renderToString(m.trim(), {
-          displayMode: false, throwOnError: false, trust: true, strict: false
-        });
-      } catch (_) { return m; }
-    });
-  text = text.replace(/([a-zA-Z]\\?'{1,2}\([^)]*\)(?:\s*=\s*[^\n$<>]+)?)/g, function (m) {
-    if (/<span|<div|class="katex/.test(m)) return m;
-    try {
-      return window.katex.renderToString(m.trim(), {
-        displayMode: false, throwOnError: false, trust: true, strict: false
-      });
-    } catch (_) { return m; }
-  });
-  return text;
-}
-
-function renderLatex(rawText, isFinal) {
-  let text = String(rawText == null ? '' : rawText);
-  if (!window.katex) return text;
-  text = cleanLeakedHtml(text);
-  text = cleanLatexText(text);
-
-  text = text.replace(/(?<!\$)\$([^\$\n]+?)\$(?!\$)/g, function (m, formula) {
-    try {
-      return window.katex.renderToString(formula.trim(), {
-        displayMode: false, throwOnError: false, trust: true, strict: false
-      });
-    } catch (_) { return m; }
-  });
-
-  text = text.replace(/\$\$([\s\S]*?)\$\$/g, function (m, formula) {
-    const inner = formula.trim();
-    const display = /\n/.test(inner) || inner.length >= 80;
-    try {
-      return window.katex.renderToString(inner, {
-        displayMode: display, throwOnError: false, trust: true, strict: false
-      });
-    } catch (_) { return m; }
-  });
-
-  if (!isFinal) {
-    const open = text.indexOf('$$');
-    if (open >= 0 && text.indexOf('$$', open + 2) < 0) {
-      text = text.substring(0, open) + '<span class="katex-pending">$$</span>';
-    }
-  } else {
-    text = autoWrapBareLatex(text);
-    text = text.replace(/\$\$/g, '');
-  }
-  return text;
-}
-
-function renderMarkdown(rawText, isFinal) {
+function renderMarkdown(rawText) {
   const text = String(rawText == null ? '' : rawText);
   if (!window.marked) {
     return escapeHtml(text).replace(/\n/g, '<br>');
   }
+  let html;
   try {
-    const html = window.marked.parse(renderLatex(text, !!isFinal));
-    return sanitizeHtml(html);
+    const prepared = prepareMarkdown(text);
+    html = restoreMath(window.marked.parse(prepared.text), prepared);
   } catch (_) {
     return escapeHtml(text).replace(/\n/g, '<br>');
+  }
+  html = sanitizeHtml(html);
+
+  const renderMath = window.renderMathInElement
+    || (window.katex && window.katex.renderMathInElement);
+  if (renderMath) {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = html;
+    try {
+      renderMath(wrap, {
+        delimiters: [
+          { left: '$$', right: '$$', display: true },
+          { left: '\\[', right: '\\]', display: true },
+          { left: '$', right: '$', display: false },
+          { left: '\\(', right: '\\)', display: false }
+        ],
+        throwOnError: false,
+        errorColor: '#d92d20',
+        strict: false,
+        trust: true,
+        ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code', 'option']
+      });
+      html = wrap.innerHTML;
+    } catch (_) { /* 保留未渲染的 Markdown */ }
+  }
+  return sanitizeHtml(html);
+}
+
+function extractAnswerTitle(text) {
+  const m = String(text || '').match(/^\s*#{1,4}\s+(.+?)\s*$/m);
+  if (!m) return '';
+  return m[1].replace(/[*_`~#]/g, '').trim().slice(0, 40);
+}
+
+function stripAnswerTitle(text) {
+  return String(text || '').replace(/^\s*#{1,4}\s+[^\n]*\n+/, '');
+}
+
+function parseAnswerMeta(raw) {
+  const text = String(raw || '');
+  const match = /^\s*<!--\s*via-meta\s*([\s\S]*?)-->\s*/i.exec(text);
+  if (!match) return { text: text, meta: null };
+  const clean = text.slice(match[0].length);
+  let meta = null;
+  try {
+    meta = JSON.parse(match[1].trim());
+  } catch (_) { /* 元数据损坏时忽略 */ }
+  return { text: clean, meta: meta && typeof meta === 'object' ? meta : null };
+}
+
+const ANSWER_TYPE_LABELS = {
+  text: '文本',
+  formula: '公式',
+  chemistry: '化学方程式',
+  code: '代码',
+  table: '表格',
+  mixed: '综合'
+};
+
+function renderAnswerMeta(ai, meta) {
+  if (!ai || !ai.tags) return;
+  const subject = meta && typeof meta.subject === 'string'
+    ? meta.subject.trim().slice(0, 12) : '';
+  const type = meta && typeof meta.type === 'string'
+    ? (ANSWER_TYPE_LABELS[meta.type] || '') : '';
+  const grade = meta && typeof meta.grade === 'string'
+    ? meta.grade.trim().slice(0, 8) : '';
+  const label = [subject, type].filter(Boolean).join(' · ');
+  ai.meta = meta || null;
+  ai.tags.textContent = label;
+  ai.tags.hidden = !label;
+  ai.tags.title = [subject, type, grade].filter(Boolean).join(' · ');
+  if (ai.answer) {
+    ai.answer.dataset.subject = subject;
+    ai.answer.dataset.contentType = meta && meta.type ? meta.type : '';
   }
 }
 
@@ -830,6 +897,25 @@ async function sendMessage() {
     return;
   }
 
+  if (state.pendingEdit) {
+    const edit = state.pendingEdit;
+    if (!edit.sessionId || edit.sessionId !== state.dbSessionId) {
+      cancelEdit(false);
+      toast('会话已切换，请重新编辑');
+      return;
+    }
+    try {
+      await truncateMessages(edit.sessionId, edit.msgId);
+      removeRowsFrom(edit.row);
+      state.currentAi = null;
+      state.pendingEdit = null;
+      hideEditBanner();
+    } catch (err) {
+      toast('重新编辑失败：' + (err.message || '网络错误'));
+      return;
+    }
+  }
+
   const cfg = state.config;
   let dbId = state.dbSessionId;
   if (!dbId) {
@@ -847,6 +933,8 @@ async function sendMessage() {
   input.focus();
   state.lastQuestion = text;
   state.lastAnswer = '';
+  state.autoScroll = true;
+  state.hasNewContent = false;
   addUserMessage(text, attachments);
 
   state.attachments = [];
@@ -857,6 +945,8 @@ async function sendMessage() {
   renderAttachments();
 
   const ai = createAiMessage(text);
+  updateStatus(ai, state.webSearch ? '正在联网搜索…'
+    : (state.deepThinking ? '正在深度思考…' : '正在生成…'));
 
   setLoading(true);
   const controller = new AbortController();
@@ -873,6 +963,9 @@ async function sendMessage() {
   };
   if (dbId) body.sessionId = dbId;
   if (attachments.length) body.attachments = attachments.map(a => a.id);
+  if (state.personalPrompt) body.customInstructions = state.personalPrompt;
+  body.deepThinking = !!state.deepThinking;
+  body.webSearch = !!state.webSearch;
 
   try {
     const res = await fetch('/api/chat', {
@@ -899,7 +992,6 @@ async function sendMessage() {
     state.abort = null;
     setLoading(false);
     loadSessions();
-    loadErrorBook();
     attachments.forEach(a => {
       if (a.id) fetch('/api/attachments/' + a.id, { method: 'DELETE' }).catch(() => {});
     });
@@ -994,10 +1086,14 @@ function handleSseBlock(block, ai) {
 
 /* ---------------- AI 消息渲染 ---------------- */
 
-function addUserMessage(text, attachments) {
+function addUserMessage(text, attachments, msgId) {
   hideWelcome();
   const row = document.createElement('div');
   row.className = 'msg user';
+  row.dataset.rawText = text || '';
+  if (msgId) row.dataset.msgId = String(msgId);
+  const wrap = document.createElement('div');
+  wrap.className = 'user-wrap';
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
   bubble.textContent = text;
@@ -1024,9 +1120,160 @@ function addUserMessage(text, attachments) {
     bubble.appendChild(list);
   }
 
-  row.appendChild(bubble);
+  const actions = document.createElement('div');
+  actions.className = 'user-actions';
+  const edit = document.createElement('button');
+  edit.type = 'button';
+  edit.className = 'msg-action act-edit';
+  edit.innerHTML = EDIT_SVG + '重新编辑';
+  edit.addEventListener('click', () => beginEdit(row));
+  actions.appendChild(edit);
+
+  wrap.appendChild(bubble);
+  wrap.appendChild(actions);
+  row.appendChild(wrap);
   $('#chat-list').appendChild(row);
   scrollToBottom(true);
+}
+
+function previousUserRow(row) {
+  let el = row ? row.previousElementSibling : null;
+  while (el) {
+    if (el.classList && el.classList.contains('msg') && el.classList.contains('user')) {
+      return el;
+    }
+    el = el.previousElementSibling;
+  }
+  return null;
+}
+
+function showEditBanner() {
+  const el = $('#edit-banner');
+  if (el) el.hidden = false;
+}
+
+function hideEditBanner() {
+  const el = $('#edit-banner');
+  if (el) el.hidden = true;
+}
+
+function cancelEdit(clearInput) {
+  state.pendingEdit = null;
+  hideEditBanner();
+  if (clearInput) {
+    const input = $('#input-box');
+    if (input) {
+      input.value = '';
+      resizeInput();
+    }
+  }
+}
+
+async function syncMessageUserIds() {
+  if (!state.dbSessionId) return;
+  try {
+    const res = await fetch('/api/history/messages/' + state.dbSessionId, { cache: 'no-store' });
+    if (!res.ok) return;
+    const messages = await res.json();
+    if (!Array.isArray(messages)) return;
+    const users = messages.filter(m => m.role === 'user');
+    const rows = $$('#chat-list .msg.user');
+    const count = Math.min(users.length, rows.length);
+    for (let i = 0; i < count; i++) {
+      rows[i].dataset.msgId = String(users[i].msgId);
+      rows[i].dataset.rawText = users[i].content || '';
+    }
+  } catch (_) { /* 同步失败时保留现有消息ID */ }
+}
+
+async function ensureUserMsgId(row) {
+  if (!row) return 0;
+  let id = Number(row.dataset.msgId);
+  if (id) return id;
+  await syncMessageUserIds();
+  return Number(row.dataset.msgId) || 0;
+}
+
+async function truncateMessages(sessionId, fromMessageId) {
+  const res = await fetch('/api/history/messages/truncate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId: sessionId, fromMessageId: fromMessageId })
+  });
+  let data = {};
+  try { data = await res.json(); } catch (_) { /* 忽略 */ }
+  if (!res.ok || data.success === false || !data.deleted) {
+    throw new Error(data.error || '消息截断失败');
+  }
+  return data.deleted;
+}
+
+function removeRowsFrom(row) {
+  const list = $('#chat-list');
+  if (!list || !row) return;
+  let el = row;
+  while (el) {
+    const next = el.nextElementSibling;
+    list.removeChild(el);
+    el = next;
+  }
+}
+
+async function beginEdit(row) {
+  if (!row || state.loading) {
+    if (state.loading) toast('正在生成回答，请稍后再编辑');
+    return;
+  }
+  const id = await ensureUserMsgId(row);
+  if (!id) {
+    toast('这条消息还没有同步，请稍后重试');
+    return;
+  }
+  const input = $('#input-box');
+  const text = row.dataset.rawText || '';
+  state.pendingEdit = {
+    row: row,
+    msgId: id,
+    text: text,
+    sessionId: state.dbSessionId
+  };
+  input.value = text;
+  resizeInput();
+  showEditBanner();
+  input.focus();
+  input.setSelectionRange(text.length, text.length);
+}
+
+async function regenerateAnswer(ai) {
+  if (!ai) return;
+  if (state.loading) {
+    toast('正在生成回答，请稍后再试');
+    return;
+  }
+  const userRow = ai.userRow || previousUserRow(ai.row);
+  const question = String(ai.question || (userRow && userRow.dataset.rawText) || '').trim();
+  if (!userRow || !question) {
+    toast('找不到对应的提问');
+    return;
+  }
+  try {
+    const id = await ensureUserMsgId(userRow);
+    if (id && state.dbSessionId) {
+      await truncateMessages(state.dbSessionId, id);
+      removeRowsFrom(userRow);
+    } else {
+      removeRowsFrom(ai.row);
+      userRow.remove();
+    }
+    state.pendingEdit = null;
+    hideEditBanner();
+    const input = $('#input-box');
+    input.value = question;
+    resizeInput();
+    await sendMessage();
+  } catch (err) {
+    toast('重新生成失败：' + (err.message || '网络错误'));
+  }
 }
 
 function createAiMessage(question) {
@@ -1034,15 +1281,19 @@ function createAiMessage(question) {
   const row = document.createElement('div');
   row.className = 'msg ai';
   row.innerHTML =
-    '<div class="ai-avatar" aria-hidden="true">' + AVATAR_SVG + '</div>' +
     '<div class="ai-main">' +
-      '<div class="ai-meta"><span class="ai-name">Pathfinder</span><span class="ai-status">正在连接…</span></div>' +
+      '<div class="ai-meta">' +
+        '<span class="ai-avatar" aria-hidden="true">' + AVATAR_SVG + '</span>' +
+        '<span class="ai-name">Pathfinder</span><span class="ai-status">正在连接…</span><span class="ai-tags" hidden></span>' +
+      '</div>' +
       '<details class="think" hidden><summary>推理过程</summary><div class="think-body"></div></details>' +
       '<div class="answer"><span class="typing"><i></i><i></i><i></i></span></div>' +
       '<div class="metrics" hidden></div>' +
       '<div class="msg-actions" hidden>' +
         '<button type="button" class="msg-action act-copy">' + COPY_SVG + '复制</button>' +
         '<button type="button" class="msg-action act-save">' + BOOKMARK_SVG + '收藏</button>' +
+        '<button type="button" class="msg-action act-regen">' + REGEN_SVG + '重新生成</button>' +
+        '<button type="button" class="msg-action act-export">' + EXPORT_SVG + '导出</button>' +
       '</div>' +
     '</div>';
   $('#chat-list').appendChild(row);
@@ -1053,11 +1304,15 @@ function createAiMessage(question) {
     think: row.querySelector('.think'),
     thinkBody: row.querySelector('.think-body'),
     status: row.querySelector('.ai-status'),
+    tags: row.querySelector('.ai-tags'),
     metricsEl: row.querySelector('.metrics'),
     actions: row.querySelector('.msg-actions'),
     raw: '',
     thinkRaw: '',
     question: question || '',
+    userRow: previousUserRow(row),
+    title: '',
+    meta: null,
     finished: false,
     smoothBuf: '',
     smoothText: '',
@@ -1066,6 +1321,8 @@ function createAiMessage(question) {
 
   row.querySelector('.act-copy').addEventListener('click', () => copyAnswer(ai));
   row.querySelector('.act-save').addEventListener('click', () => saveAnswer(ai));
+  row.querySelector('.act-regen').addEventListener('click', () => regenerateAnswer(ai));
+  row.querySelector('.act-export').addEventListener('click', () => openExportSheet(ai));
   state.currentAi = ai;
   scrollToBottom(true);
   return ai;
@@ -1073,10 +1330,15 @@ function createAiMessage(question) {
 
 function addStaticAi(text, thinkRaw, question, usage) {
   const ai = createAiMessage(question);
+  const parsed = parseAnswerMeta(text || '');
   ai.finished = true;
-  ai.raw = text || '';
+  ai.raw = parsed.text;
+  ai.title = extractAnswerTitle(ai.raw);
   ai.answer.classList.add('markdown');
-  ai.answer.innerHTML = text ? renderMarkdown(text, true) : '<span class="muted">（空回答）</span>';
+  ai.answer.innerHTML = ai.raw
+    ? renderMarkdown(ai.raw, true)
+    : '<span class="muted">（空回答）</span>';
+  renderAnswerMeta(ai, parsed.meta);
   if (thinkRaw) {
     ai.thinkRaw = thinkRaw;
     ai.think.hidden = false;
@@ -1105,6 +1367,101 @@ function renderThinkFinal(ai) {
   ai.thinkBody.innerHTML = renderMarkdown(ai.thinkRaw, true);
 }
 
+function stripStreamingMeta(text) {
+  const match = /^\s*<!--\s*via-meta\b/i.exec(text);
+  if (!match) return text;
+  const end = text.indexOf('-->', match.index + match[0].length);
+  if (end < 0) return '';
+  return text.slice(end + 3).replace(/^\s+/, '');
+}
+
+function findUnclosedMarkdown(text) {
+  let i = 0;
+  let code = null;
+  let math = null;
+  while (i < text.length) {
+    if (code) {
+      if (text.startsWith(code.marker, i)) {
+        const len = code.marker.length;
+        code = null;
+        i += len;
+      } else {
+        i++;
+      }
+      continue;
+    }
+    if (math) {
+      if (text.startsWith(math.close, i)) {
+        const len = math.close.length;
+        math = null;
+        i += len;
+      } else {
+        i++;
+      }
+      continue;
+    }
+    if (text.startsWith('```', i) || text.startsWith('~~~', i)) {
+      const ch = text[i];
+      let j = i;
+      while (text[j] === ch) j++;
+      const lineStart = text.lastIndexOf('\n', i - 1) + 1;
+      const before = text.slice(lineStart, i);
+      if (j - i >= 3 && /^[ \t]{0,3}$/.test(before)) {
+        code = { marker: ch.repeat(j - i), start: i };
+        i = j;
+        continue;
+      }
+    }
+    if (text.startsWith('$$', i)) {
+      math = { close: '$$', start: i };
+      i += 2;
+      continue;
+    }
+    if (text.startsWith('\\[', i)) {
+      math = { close: '\\]', start: i };
+      i += 2;
+      continue;
+    }
+    if (text.startsWith('\\(', i)) {
+      math = { close: '\\)', start: i };
+      i += 2;
+      continue;
+    }
+    if (text[i] === '$') {
+      math = { close: '$', start: i };
+      i++;
+      continue;
+    }
+    if (text[i] === '\\') {
+      i += 2;
+      continue;
+    }
+    i++;
+  }
+  if (code) return { index: code.start, type: 'code' };
+  if (math) return { index: math.start, type: 'math' };
+  return null;
+}
+
+function renderStreamingMarkdown(rawText) {
+  const text = stripStreamingMeta(rawText);
+  const pending = findUnclosedMarkdown(text);
+  if (!pending) return renderMarkdown(text);
+
+  const stable = text.slice(0, pending.index);
+  const tail = text.slice(pending.index);
+  let html = stable ? renderMarkdown(stable) : '';
+  if (pending.type === 'code') {
+    const body = tail.replace(/^(```|~~~)[^\n]*\n?/, '');
+    html += '<pre class="stream-pending stream-pending-code"><code>'
+      + escapeHtml(body) + '</code></pre>';
+  } else {
+    html += '<div class="stream-pending stream-pending-math">'
+      + escapeHtml(tail) + '</div>';
+  }
+  return html;
+}
+
 function feedSmooth(ai, chunk) {
   ai.smoothBuf += chunk;
   if (ai.smoothTimer) return;
@@ -1121,8 +1478,9 @@ function tickSmooth(ai) {
   ai.smoothText += ai.smoothBuf.slice(0, size);
   ai.smoothBuf = ai.smoothBuf.slice(size);
   ai.answer.classList.add('markdown');
-  ai.answer.innerHTML = renderMarkdown(ai.smoothText, false);
-  if (isNearBottom()) scrollToBottom(false);
+  ai.answer.innerHTML = renderStreamingMarkdown(ai.smoothText);
+  if (state.autoScroll) scrollToBottom(false);
+  else { state.hasNewContent = true; syncScrollButton(); }
 }
 
 function flushSmooth(ai) {
@@ -1144,10 +1502,14 @@ function finishAi(ai, fullText, stopped, metrics) {
     clearInterval(ai.smoothTimer);
     ai.smoothTimer = null;
   }
-  const text = (typeof fullText === 'string' && fullText) ? fullText : (ai.smoothText + ai.smoothBuf);
+  const full = (typeof fullText === 'string' && fullText) ? fullText : (ai.smoothText + ai.smoothBuf);
+  const parsed = parseAnswerMeta(full);
+  const text = parsed.text;
   ai.smoothText = text;
   ai.smoothBuf = '';
   ai.raw = text;
+  ai.title = extractAnswerTitle(text);
+  renderAnswerMeta(ai, parsed.meta);
 
   if (text) {
     ai.answer.classList.add('markdown');
@@ -1160,7 +1522,13 @@ function finishAi(ai, fullText, stopped, metrics) {
   if (metrics) renderMetrics(ai, metrics);
   ai.actions.hidden = false;
   state.lastAnswer = text;
-  scrollToBottom(true);
+  syncMessageUserIds();
+  if (state.autoScroll) {
+    scrollToBottom(false);
+  } else {
+    state.hasNewContent = true;
+    syncScrollButton();
+  }
   if (!stopped) refreshBalance(false);
 }
 
@@ -1171,12 +1539,29 @@ function failAi(ai, message) {
     clearInterval(ai.smoothTimer);
     ai.smoothTimer = null;
   }
-  ai.answer.innerHTML = '<div class="error-box"></div>';
-  ai.answer.querySelector('.error-box').textContent = message;
+  const box = document.createElement('div');
+  box.className = 'error-box';
+  const text = document.createElement('span');
+  text.textContent = message;
+  const retry = document.createElement('button');
+  retry.type = 'button';
+  retry.className = 'error-retry';
+  retry.textContent = '重新生成';
+  retry.addEventListener('click', () => regenerateAnswer(ai));
+  box.appendChild(text);
+  box.appendChild(retry);
+  ai.answer.innerHTML = '';
+  ai.answer.appendChild(box);
   updateStatus(ai, '调用失败', true);
   ai.actions.hidden = true;
   state.lastAnswer = '';
-  scrollToBottom(true);
+  syncMessageUserIds();
+  if (state.autoScroll) {
+    scrollToBottom(false);
+  } else {
+    state.hasNewContent = true;
+    syncScrollButton();
+  }
 }
 
 /* ---------------- 用量指标 ---------------- */
@@ -1186,11 +1571,11 @@ function formatInt(value) {
   return n.toLocaleString('zh-CN');
 }
 
-function formatCost(value) {
-  const n = Number(value || 0);
-  if (n >= 0.01) return '$' + n.toFixed(4);
-  if (n >= 0.000001) return '$' + n.toFixed(6);
-  return '$' + n.toFixed(8);
+function formatCostCny(usd) {
+  const n = Number(usd || 0) * USD_TO_CNY;
+  if (n >= 0.01) return '¥' + n.toFixed(4);
+  if (n >= 0.000001) return '¥' + n.toFixed(6);
+  return '¥' + n.toFixed(8);
 }
 
 function formatTtft(ms) {
@@ -1239,20 +1624,16 @@ function renderMetrics(ai, metrics) {
     if (metrics.costUsd == null) {
       addMetricItem(el, '费用', '—', 'cost', '该模型未配置费率');
     } else {
-      const costText = formatCost(metrics.costUsd);
+      const costText = formatCostCny(metrics.costUsd);
       const item = document.createElement('span');
       item.className = 'metric cost';
-      item.title = '按 DeepSeek 官方美元价估算（' + peak + '，节假日未计入）';
+      item.title = '按 DeepSeek 官方美元价 × ' + USD_TO_CNY + ' 折算（' + peak + '，节假日未计入），实际以账单为准';
       const name = document.createElement('b');
       name.textContent = '费用';
       const val = document.createElement('strong');
-      val.textContent = costText;
-      const est = document.createElement('span');
-      est.className = 'est';
-      est.textContent = '估';
+      val.textContent = '≈ ' + costText;
       item.appendChild(name);
       item.appendChild(val);
-      item.appendChild(est);
       el.appendChild(item);
     }
   }
@@ -1292,18 +1673,20 @@ function copyText(text) {
 
 /* ---------------- 滚动与欢迎区 ---------------- */
 
-function isNearBottom() {
+function isNearBottom(threshold = 120) {
   const el = $('#chat-scroll');
   if (!el) return true;
-  return el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  return el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
 }
 
 function scrollToBottom(force) {
   const el = $('#chat-scroll');
   if (!el) return;
-  if (force || isNearBottom()) {
+  if (force) state.autoScroll = true;
+  if (force || state.autoScroll) {
     el.scrollTop = el.scrollHeight;
-    $('#scroll-bottom').classList.remove('show');
+    state.hasNewContent = false;
+    $('#scroll-bottom').classList.remove('show', 'has-new');
   }
 }
 
@@ -1311,8 +1694,20 @@ function syncScrollButton() {
   const el = $('#chat-scroll');
   const btn = $('#scroll-bottom');
   if (!el || !btn) return;
+
+  const next = el.scrollTop;
+  const goingUp = next < state.lastScrollTop - 2;
+  if (goingUp) {
+    state.autoScroll = false;
+  } else if (isNearBottom()) {
+    state.autoScroll = true;
+    state.hasNewContent = false;
+  }
+  state.lastScrollTop = next;
+
   const show = el.scrollHeight > el.clientHeight + 240 && !isNearBottom();
   btn.classList.toggle('show', show);
+  btn.classList.toggle('has-new', show && state.hasNewContent);
 }
 
 function hideWelcome() {
@@ -1335,6 +1730,8 @@ function clearChat() {
   showWelcome();
   state.currentAi = null;
   state.lastAnswer = '';
+  state.autoScroll = true;
+  state.hasNewContent = false;
 }
 
 /* ---------------- 历史会话 ---------------- */
@@ -1372,19 +1769,31 @@ async function loadSessions() {
 }
 
 function renderSessions(sessions) {
+  state.historySessions = Array.isArray(sessions) ? sessions : [];
   const wrap = $('#history-list');
   if (!wrap) return;
+
+  const ids = new Set(state.historySessions.map(s => String(s.sessionId)));
+  Array.from(state.selectedSessions).forEach(id => {
+    if (!ids.has(id)) state.selectedSessions.delete(id);
+  });
+  if (state.historyEdit && !state.historySessions.length) {
+    state.historyEdit = false;
+    state.selectedSessions.clear();
+  }
+
   wrap.innerHTML = '';
-  if (!sessions.length) {
+  if (!state.historySessions.length) {
     const empty = document.createElement('div');
     empty.className = 'history-empty';
     empty.textContent = '还没有历史对话。发送第一条消息后会自动保存。';
     wrap.appendChild(empty);
+    updateHistoryEditUI();
     return;
   }
 
   let currentGroup = '';
-  sessions.forEach(s => {
+  state.historySessions.forEach(s => {
     const date = new Date(s.updateTime || s.createTime || '');
     const group = groupLabel(date);
     if (group !== currentGroup) {
@@ -1395,9 +1804,24 @@ function renderSessions(sessions) {
       wrap.appendChild(label);
     }
 
+    const key = String(s.sessionId);
     const item = document.createElement('div');
-    item.className = 'history-item' + (Number(s.sessionId) === Number(state.dbSessionId) ? ' active' : '');
-    item.dataset.id = s.sessionId;
+    item.className = 'history-item'
+      + (Number(s.sessionId) === Number(state.dbSessionId) ? ' active' : '')
+      + (state.historyEdit ? ' editing' : '')
+      + (state.selectedSessions.has(key) ? ' selected' : '');
+    item.dataset.id = key;
+
+    if (state.historyEdit) {
+      const check = document.createElement('span');
+      check.className = 'h-check';
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = state.selectedSessions.has(key);
+      box.tabIndex = -1;
+      check.appendChild(box);
+      item.appendChild(check);
+    }
 
     const main = document.createElement('button');
     main.type = 'button';
@@ -1410,17 +1834,106 @@ function renderSessions(sessions) {
     time.textContent = timeLabel(date);
     main.appendChild(title);
     main.appendChild(time);
-
-    const del = document.createElement('button');
-    del.type = 'button';
-    del.className = 'h-del';
-    del.setAttribute('aria-label', '删除对话');
-    del.innerHTML = TRASH_SVG;
-
     item.appendChild(main);
-    item.appendChild(del);
+
+    if (!state.historyEdit) {
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'h-del';
+      del.setAttribute('aria-label', '删除对话');
+      del.innerHTML = TRASH_SVG;
+      item.appendChild(del);
+    }
+
     wrap.appendChild(item);
   });
+
+  updateHistoryEditUI();
+}
+
+function updateHistoryEditUI() {
+  const edit = $('#history-edit');
+  if (edit) {
+    edit.textContent = state.historyEdit ? '完成' : '编辑';
+    edit.disabled = !state.historySessions.length;
+  }
+  const bar = $('#history-edit-bar');
+  if (bar) bar.hidden = !state.historyEdit;
+
+  const total = state.historySessions.length;
+  const selected = state.selectedSessions.size;
+  const all = $('#history-select-all');
+  if (all) {
+    all.checked = total > 0 && selected === total;
+    all.indeterminate = selected > 0 && selected < total;
+    all.disabled = total === 0;
+  }
+  const del = $('#history-delete-selected');
+  if (del) {
+    del.disabled = selected === 0;
+    del.textContent = selected ? '删除 (' + selected + ')' : '删除';
+  }
+}
+
+function setHistoryEdit(on) {
+  if (on && !state.historySessions.length) {
+    toast('还没有可编辑的对话');
+    return;
+  }
+  state.historyEdit = !!on;
+  if (!state.historyEdit) state.selectedSessions.clear();
+  renderSessions(state.historySessions);
+}
+
+function toggleSessionSelection(id) {
+  const key = String(id);
+  if (state.selectedSessions.has(key)) {
+    state.selectedSessions.delete(key);
+  } else {
+    state.selectedSessions.add(key);
+  }
+  const item = $$('.history-item').find(el => el.dataset.id === key);
+  if (item) {
+    item.classList.toggle('selected', state.selectedSessions.has(key));
+    const box = item.querySelector('input[type="checkbox"]');
+    if (box) box.checked = state.selectedSessions.has(key);
+  }
+  updateHistoryEditUI();
+}
+
+function selectAllSessions(checked) {
+  state.selectedSessions = checked
+    ? new Set(state.historySessions.map(s => String(s.sessionId)))
+    : new Set();
+  renderSessions(state.historySessions);
+}
+
+async function deleteSelectedSessions() {
+  const ids = Array.from(state.selectedSessions).map(Number).filter(Boolean);
+  if (!ids.length) {
+    toast('先选择要删除的对话');
+    return;
+  }
+  if (!confirm('删除选中的 ' + ids.length + ' 条对话？删除后无法恢复。')) return;
+
+  try {
+    const res = await fetch('/api/history/sessions/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: ids })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json().catch(() => ({}));
+    const deleted = data && data.deleted != null ? Number(data.deleted) : ids.length;
+    const currentDeleted = ids.includes(Number(state.dbSessionId));
+    state.historyEdit = false;
+    state.selectedSessions.clear();
+    if (currentDeleted) newChat();
+    await loadSessions();
+    toast('已删除 ' + deleted + ' 条对话');
+  } catch (_) {
+    toast('删除失败，请稍后重试');
+  }
 }
 
 function markActiveSession() {
@@ -1431,6 +1944,7 @@ function markActiveSession() {
 
 async function openSession(id, silent) {
   if (!id) return;
+  if (state.pendingEdit) cancelEdit(true);
   if (state.abort) {
     try { state.abort.abort(); } catch (_) { /* 忽略 */ }
   }
@@ -1450,11 +1964,13 @@ async function openSession(id, silent) {
       return;
     }
     hideWelcome();
+    state.autoScroll = true;
+    state.hasNewContent = false;
     let lastUser = '';
     messages.forEach(m => {
       if (m.role === 'user') {
         lastUser = m.content || '';
-        addUserMessage(lastUser);
+        addUserMessage(lastUser, null, m.msgId);
       } else if (m.role === 'assistant') {
         addStaticAi(m.content || '', m.thinkRaw || '', lastUser, m.usage || null);
       }
@@ -1485,12 +2001,16 @@ async function deleteSession(id) {
 }
 
 function newChat() {
+  if (state.pendingEdit) cancelEdit(false);
+  if (state.historyEdit) setHistoryEdit(false);
   if (state.abort) {
     try { state.abort.abort(); } catch (_) { /* 忽略 */ }
   }
   setLoading(false);
   state.dbSessionId = null;
   localStorage.removeItem(LS.session);
+  state.autoScroll = true;
+  state.hasNewContent = false;
   clearChat();
   closeDrawer();
   markActiveSession();
@@ -1500,50 +2020,70 @@ function newChat() {
   input.focus();
 }
 
-/* ---------------- 错题本 ---------------- */
+/* ---------------- 我的收藏 ---------------- */
 
-function loadErrorBook() {
+function loadFavorites() {
   let list = [];
   try {
-    list = JSON.parse(localStorage.getItem(LS.errorBook) || '[]');
+    const raw = localStorage.getItem(LS.favorites);
+    if (raw) {
+      list = JSON.parse(raw);
+    } else {
+      const legacy = JSON.parse(localStorage.getItem(LS.legacySaved) || '[]');
+      if (Array.isArray(legacy)) {
+        list = legacy.map(item => ({
+          title: item.title || extractAnswerTitle(item.answer)
+            || String(item.question || '').slice(0, 30) || '回答收藏',
+          question: item.question || '',
+          answer: item.answer || '',
+          time: item.time || ''
+        }));
+        if (list.length) {
+          try {
+            localStorage.setItem(LS.favorites, JSON.stringify(list.slice(0, 100)));
+            localStorage.removeItem(LS.legacySaved);
+          } catch (_) { /* 忽略 */ }
+        }
+      }
+    }
   } catch (_) {
     list = [];
   }
-  state.errorBook = Array.isArray(list) ? list : [];
-  renderErrorBook();
+  state.favorites = Array.isArray(list) ? list.slice(0, 100) : [];
+  renderFavorites();
 }
 
-function saveErrorBook() {
+function saveFavorites() {
   try {
-    localStorage.setItem(LS.errorBook, JSON.stringify(state.errorBook.slice(0, 50)));
+    localStorage.setItem(LS.favorites, JSON.stringify(state.favorites.slice(0, 100)));
   } catch (_) { /* 忽略 */ }
 }
 
-function renderErrorBook() {
-  const wrap = $('#error-list');
-  const count = $('#error-count');
+function renderFavorites() {
+  const wrap = $('#favorite-list');
+  const count = $('#favorite-count');
+  if (count) count.textContent = String(state.favorites.length);
   if (!wrap) return;
-  if (count) count.textContent = String(state.errorBook.length);
   wrap.innerHTML = '';
-  if (!state.errorBook.length) {
+  if (!state.favorites.length) {
     const empty = document.createElement('div');
-    empty.className = 'error-empty';
-    empty.textContent = '在回答下方点「收藏」，题目会保存在这里。';
+    empty.className = 'favorite-empty';
+    empty.textContent = '在回答下方点「收藏」，答案会保存在这里。';
     wrap.appendChild(empty);
     return;
   }
-  state.errorBook.forEach((item, index) => {
+  state.favorites.forEach((item, index) => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'error-item';
+    btn.className = 'favorite-item';
     btn.dataset.index = String(index);
-    const q = document.createElement('span');
-    q.className = 'eq';
-    q.textContent = item.question || '（未记录题目）';
+    const title = document.createElement('span');
+    title.className = 'ft';
+    title.textContent = item.title || item.question || '回答收藏';
     const meta = document.createElement('span');
-    meta.className = 'em';
+    meta.className = 'fm';
     meta.textContent = item.time || '';
-    btn.appendChild(q);
+    btn.appendChild(title);
     btn.appendChild(meta);
     wrap.appendChild(btn);
   });
@@ -1556,36 +2096,568 @@ function saveAnswer(ai) {
     return;
   }
   const question = (ai && ai.question) || state.lastQuestion || '';
-  const exists = state.errorBook.some(item => item.answer === answer && item.question === question);
+  const exists = state.favorites.some(item => item.answer === answer && item.question === question);
   if (exists) {
-    toast('这道题已经在错题本里');
+    toast('这条回答已在收藏中');
     return;
   }
-  state.errorBook.unshift({
+  const title = (ai && ai.title) || extractAnswerTitle(answer)
+    || question.slice(0, 30) || '回答收藏';
+  state.favorites.unshift({
+    title: title,
     question: question,
     answer: answer,
     time: new Date().toLocaleString('zh-CN', { hour12: false })
   });
-  saveErrorBook();
-  renderErrorBook();
-  toast('已收藏到错题本');
+  state.favorites = state.favorites.slice(0, 100);
+  saveFavorites();
+  renderFavorites();
+  toast('已收藏');
 }
 
-function openSaved(index) {
-  const item = state.errorBook[index];
+function openFavorite(index) {
+  const item = state.favorites[index];
   if (!item) return;
-  state.savedIndex = index;
+  state.favoriteIndex = index;
   $('#saved-time').textContent = item.time || '';
-  $('#saved-question').textContent = item.question || '（未记录题目）';
+  const title = $('#saved-answer-title');
+  if (title) {
+    title.textContent = item.title || '';
+    title.hidden = !item.title;
+  }
+  const question = $('#saved-question');
+  if (question) {
+    question.textContent = item.question || '';
+    question.hidden = !item.question;
+  }
   $('#saved-answer').innerHTML = item.answer
-    ? renderMarkdown(item.answer, true)
+    ? renderMarkdown(stripAnswerTitle(item.answer), true)
     : '<span class="muted">（空回答）</span>';
   $('#saved-overlay').hidden = false;
 }
 
-function closeSaved() {
+function closeFavorite() {
   $('#saved-overlay').hidden = true;
-  state.savedIndex = -1;
+  state.favoriteIndex = -1;
+}
+
+/* ---------------- 个性化设置 ---------------- */
+
+function normalizeAnswerFontSize(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return DEFAULT_ANSWER_FONT_SIZE;
+  return Math.min(MAX_ANSWER_FONT_SIZE, Math.max(MIN_ANSWER_FONT_SIZE, Math.round(n)));
+}
+
+function applyAnswerFontSize(value) {
+  const size = normalizeAnswerFontSize(value);
+  state.answerFontSize = size;
+  document.documentElement.style.setProperty('--answer-size', size + 'px');
+  const label = $('#font-size-value');
+  if (label) label.textContent = size + ' px';
+  const range = $('#font-size-range');
+  if (range && Number(range.value) !== size) range.value = String(size);
+}
+
+function setAnswerFontSize(value, persist) {
+  applyAnswerFontSize(value);
+  if (persist) {
+    try {
+      localStorage.setItem(LS.answerFontSize, String(state.answerFontSize));
+    } catch (_) { /* 忽略 */ }
+  }
+}
+
+function loadAnswerFontSize() {
+  let saved = null;
+  try { saved = localStorage.getItem(LS.answerFontSize); } catch (_) { /* 忽略 */ }
+  applyAnswerFontSize(saved == null ? DEFAULT_ANSWER_FONT_SIZE : saved);
+}
+
+function loadFeaturePrefs() {
+  try {
+    state.deepThinking = localStorage.getItem(LS.deepThinking) === '1';
+    const savedWeb = localStorage.getItem(LS.webSearch);
+    state.webSearch = savedWeb === null ? true : savedWeb === '1';
+  } catch (_) {
+    state.deepThinking = false;
+    state.webSearch = true;
+  }
+  updateFeatureUI();
+}
+
+function updateFeatureUI() {
+  const think = $('#think-toggle');
+  if (think) {
+    think.classList.toggle('active', !!state.deepThinking);
+    think.setAttribute('aria-pressed', state.deepThinking ? 'true' : 'false');
+  }
+  const web = $('#web-toggle');
+  if (web) {
+    web.classList.toggle('active', !!state.webSearch);
+    web.setAttribute('aria-pressed', state.webSearch ? 'true' : 'false');
+  }
+}
+
+function setDeepThinking(on) {
+  state.deepThinking = !!on;
+  try {
+    localStorage.setItem(LS.deepThinking, state.deepThinking ? '1' : '0');
+  } catch (_) { /* 忽略 */ }
+  updateFeatureUI();
+}
+
+function setWebSearch(on) {
+  state.webSearch = !!on;
+  try {
+    localStorage.setItem(LS.webSearch, state.webSearch ? '1' : '0');
+  } catch (_) { /* 忽略 */ }
+  updateFeatureUI();
+}
+
+function loadPersonalPrompt() {
+  let value = '';
+  try {
+    value = localStorage.getItem(LS.personalPrompt) || '';
+  } catch (_) { /* 忽略 */ }
+  state.personalPrompt = value.slice(0, 2000);
+  updatePersonalizeUI();
+}
+
+function updatePersonalizeUI() {
+  const stateEl = $('#personalize-state');
+  if (stateEl) stateEl.textContent = state.personalPrompt ? '已启用' : '未设置';
+  const count = $('#personal-count');
+  if (count) count.textContent = state.personalPrompt.length + ' / 2000';
+}
+
+function openPersonalize() {
+  const input = $('#personal-prompt');
+  if (input) {
+    input.value = state.personalPrompt;
+    updatePersonalizeUI();
+  }
+  applyAnswerFontSize(state.answerFontSize);
+  $('#personalize-overlay').hidden = false;
+}
+
+function closePersonalize() {
+  $('#personalize-overlay').hidden = true;
+}
+
+function savePersonalize() {
+  const input = $('#personal-prompt');
+  const value = (input ? input.value : '').trim().slice(0, 2000);
+  state.personalPrompt = value;
+  try {
+    if (value) localStorage.setItem(LS.personalPrompt, value);
+    else localStorage.removeItem(LS.personalPrompt);
+  } catch (_) { /* 忽略 */ }
+  updatePersonalizeUI();
+  closePersonalize();
+  toast(value ? '个性化设置已保存' : '已清空个性化设置');
+}
+
+function clearPersonalize() {
+  const input = $('#personal-prompt');
+  if (input) input.value = '';
+  state.personalPrompt = '';
+  try { localStorage.removeItem(LS.personalPrompt); } catch (_) { /* 忽略 */ }
+  updatePersonalizeUI();
+  closePersonalize();
+  toast('已清空个性化设置');
+}
+
+/* ---------------- 导出 ---------------- */
+
+function openExportSheet(ai) {
+  if (!ai || !ai.raw) {
+    toast('暂无可导出的回答');
+    return;
+  }
+  state.exportAi = ai;
+  $('#export-overlay').hidden = false;
+}
+
+function closeExportSheet() {
+  $('#export-overlay').hidden = true;
+  state.exportAi = null;
+}
+
+function exportBaseName(ai) {
+  const raw = String((ai && (ai.title || ai.question)) || '回答')
+    .replace(/[\\/:*?"<>|\r\n\t]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/, '');
+  return (raw || '回答').slice(0, 48);
+}
+
+function exportTimestamp() {
+  const date = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return date.getFullYear()
+    + p(date.getMonth() + 1)
+    + p(date.getDate())
+    + '_'
+    + p(date.getHours())
+    + p(date.getMinutes())
+    + p(date.getSeconds())
+    + '_'
+    + String(date.getMilliseconds()).padStart(3, '0');
+}
+
+function exportFileName(ai, ext) {
+  return exportBaseName(ai) + '_' + exportTimestamp() + '.' + ext;
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+function buildExportNode(ai, plainFormulas) {
+  const title = (ai && (ai.title || ai.question)) || '回答';
+  const question = (ai && ai.question) ? String(ai.question).trim() : '';
+  const wrap = document.createElement('div');
+  wrap.className = 'export-doc';
+
+  const h1 = document.createElement('h1');
+  h1.textContent = title;
+  wrap.appendChild(h1);
+
+  if (question) {
+    const q = document.createElement('p');
+    q.className = 'export-question';
+    q.textContent = '问题：' + question;
+    wrap.appendChild(q);
+  }
+
+  const body = document.createElement('div');
+  body.className = 'markdown export-body';
+  body.innerHTML = renderMarkdown(stripAnswerTitle(ai.raw || ''), true);
+
+  if (plainFormulas) {
+    body.querySelectorAll('.katex').forEach(node => {
+      const annotation = node.querySelector('annotation[encoding="application/x-tex"]');
+      const tex = annotation ? annotation.textContent.trim() : '';
+      const visual = node.querySelector('.katex-html');
+      const span = document.createElement('span');
+      span.className = 'export-formula';
+      span.textContent = tex
+        ? '$' + tex + '$'
+        : (visual ? visual.textContent : (node.textContent || ''));
+      node.replaceWith(span);
+    });
+  }
+
+  wrap.appendChild(body);
+  return wrap;
+}
+
+function exportTxt(ai) {
+  const title = (ai.title || ai.question || '回答').trim();
+  const question = (ai.question || '').trim();
+  const body = stripAnswerTitle(ai.raw || '').trim();
+  const content = [title, question ? '问题：' + question : '', body]
+    .filter(Boolean).join('\n\n');
+  downloadBlob(
+    new Blob(['\ufeff' + content], { type: 'text/plain;charset=utf-8' }),
+    exportFileName(ai, 'txt')
+  );
+  toast('TXT 已导出');
+}
+
+function docxRuns(node, options) {
+  const D = window.docx;
+  const runs = [];
+  const base = Object.assign({}, options || {});
+  Array.from(node.childNodes || []).forEach(child => {
+    if (child.nodeType === 3) {
+      const text = String(child.nodeValue || '').replace(/\s+/g, ' ');
+      if (text) runs.push(new D.TextRun(Object.assign({ text: text }, base)));
+      return;
+    }
+    if (child.nodeType !== 1) return;
+    const tag = child.tagName.toLowerCase();
+    const next = Object.assign({}, base);
+    if (tag === 'strong' || tag === 'b') next.bold = true;
+    if (tag === 'em' || tag === 'i') next.italics = true;
+    if (tag === 'del' || tag === 's') next.strike = true;
+    if (tag === 'code') {
+      next.font = 'Consolas';
+      next.size = 20;
+      next.shading = { fill: 'F2F2F2' };
+    }
+    if (child.classList && child.classList.contains('export-formula')) {
+      next.font = 'Consolas';
+      next.size = 20;
+      next.shading = { fill: 'F2F2F2' };
+    }
+    if (tag === 'br') {
+      runs.push(new D.TextRun({ break: 1 }));
+      return;
+    }
+    if (tag === 'img') {
+      runs.push(new D.TextRun({ text: '[图片]', italics: true, color: '888888' }));
+      return;
+    }
+    runs.push(...docxRuns(child, next));
+  });
+  return runs;
+}
+
+function docxParagraphFrom(node, options) {
+  const D = window.docx;
+  const runs = docxRuns(node);
+  if (!runs.length) return null;
+  return new D.Paragraph(Object.assign({ children: runs }, options || {}));
+}
+
+function docxListBlock(node) {
+  const D = window.docx;
+  const ordered = node.tagName.toLowerCase() === 'ol';
+  const blocks = [];
+  Array.from(node.children).forEach((li, index) => {
+    if (li.tagName.toLowerCase() !== 'li') return;
+    const prefix = ordered ? (index + 1) + '. ' : '• ';
+    const runs = [new D.TextRun({ text: prefix })].concat(docxRuns(li));
+    blocks.push(new D.Paragraph({
+      children: runs,
+      indent: { left: 360 },
+      spacing: { after: 80 }
+    }));
+  });
+  return blocks;
+}
+
+function docxTableBlock(node) {
+  const D = window.docx;
+  const rows = Array.from(node.querySelectorAll('tr')).map(tr => new D.TableRow({
+    children: Array.from(tr.children).map(cell => new D.TableCell({
+      children: [new D.Paragraph({ children: docxRuns(cell) })],
+      shading: cell.tagName.toLowerCase() === 'th' ? { fill: 'F2F2F2' } : undefined
+    }))
+  }));
+  if (!rows.length) return null;
+  const border = { style: D.BorderStyle.SINGLE, size: 4, color: 'CCCCCC' };
+  return new D.Table({
+    rows: rows,
+    width: { size: 100, type: D.WidthType.PERCENTAGE },
+    borders: {
+      top: border, bottom: border, left: border, right: border,
+      insideHorizontal: border, insideVertical: border
+    }
+  });
+}
+
+function docxBlocks(container) {
+  const D = window.docx;
+  const blocks = [];
+  const headingMap = {
+    h1: D.HeadingLevel.HEADING_1,
+    h2: D.HeadingLevel.HEADING_2,
+    h3: D.HeadingLevel.HEADING_3,
+    h4: D.HeadingLevel.HEADING_4
+  };
+  Array.from(container.childNodes || []).forEach(child => {
+    if (child.nodeType === 3) {
+      const text = String(child.nodeValue || '').trim();
+      if (text) blocks.push(new D.Paragraph({ children: [new D.TextRun({ text: text })] }));
+      return;
+    }
+    if (child.nodeType !== 1) return;
+    const tag = child.tagName.toLowerCase();
+
+    if (headingMap[tag]) {
+      const runs = docxRuns(child, { bold: true, color: '000000' });
+      if (runs.length) {
+        blocks.push(new D.Paragraph({ heading: headingMap[tag], children: runs }));
+      }
+      return;
+    }
+    if (tag === 'p') {
+      const p = docxParagraphFrom(child, { spacing: { after: 120 } });
+      if (p) blocks.push(p);
+      return;
+    }
+    if (tag === 'ul' || tag === 'ol') {
+      blocks.push(...docxListBlock(child));
+      return;
+    }
+    if (tag === 'pre') {
+      const text = String(child.textContent || '').replace(/\n$/, '');
+      const lines = text.split('\n');
+      const runs = lines.map((line, index) => new D.TextRun({
+        text: line || ' ',
+        break: index ? 1 : 0,
+        font: 'Consolas',
+        size: 20
+      }));
+      blocks.push(new D.Paragraph({
+        children: runs,
+        shading: { fill: 'F2F2F2' },
+        spacing: { after: 160 },
+        indent: { left: 180 }
+      }));
+      return;
+    }
+    if (tag === 'table') {
+      const table = docxTableBlock(child);
+      if (table) blocks.push(table);
+      return;
+    }
+    if (tag === 'blockquote') {
+      const p = docxParagraphFrom(child, {
+        indent: { left: 360 },
+        spacing: { after: 140 }
+      });
+      if (p) blocks.push(p);
+      return;
+    }
+    if (tag === 'hr') {
+      blocks.push(new D.Paragraph({
+        children: [new D.TextRun({ text: '────────', color: 'CCCCCC' })]
+      }));
+      return;
+    }
+    if (tag === 'div' || tag === 'section') {
+      blocks.push(...docxBlocks(child));
+      return;
+    }
+    const p = docxParagraphFrom(child, { spacing: { after: 120 } });
+    if (p) blocks.push(p);
+  });
+  return blocks;
+}
+
+async function ensureDocx() {
+  if (window.docx) return;
+  await loadScriptOnce(DOCX_URL);
+  if (!window.docx) throw new Error('Word 组件不可用');
+}
+
+async function exportWord(ai) {
+  try {
+    toast('正在生成 Word 文档…');
+    await ensureDocx();
+    const D = window.docx;
+    const node = buildExportNode(ai, true);
+    const body = node.querySelector('.export-body');
+    const title = (ai.title || ai.question || '回答').trim();
+    const question = (ai.question || '').trim();
+    const children = [
+      new D.Paragraph({
+        heading: D.HeadingLevel.TITLE,
+        children: [new D.TextRun({ text: title, bold: true, size: 36, color: '000000' })],
+        spacing: { after: 120 }
+      })
+    ];
+    if (question) {
+      children.push(new D.Paragraph({
+        children: [new D.TextRun({
+          text: '问题：' + question,
+          italics: true,
+          color: '666666',
+          size: 20
+        })],
+        spacing: { after: 220 }
+      }));
+    }
+    if (body) children.push(...docxBlocks(body));
+
+    const doc = new D.Document({
+      styles: {
+        default: {
+          document: {
+            run: { font: 'Microsoft YaHei', size: 24 },
+            paragraph: { spacing: { line: 360, after: 120 } }
+          }
+        }
+      },
+      sections: [{
+        properties: {
+          page: {
+            size: { width: 11906, height: 16838 },
+            margin: { top: 1134, right: 1134, bottom: 1134, left: 1134 }
+          }
+        },
+        children: children
+      }]
+    });
+    const blob = await D.Packer.toBlob(doc);
+    downloadBlob(blob, exportFileName(ai, 'docx'));
+    toast('Word 文档已导出');
+  } catch (err) {
+    console.error(err);
+    toast('Word 导出失败，请稍后重试');
+  }
+}
+
+function loadScriptOnce(src) {
+  if (scriptLoads[src]) return scriptLoads[src];
+  scriptLoads[src] = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => {
+      delete scriptLoads[src];
+      reject(new Error('脚本加载失败'));
+    };
+    document.head.appendChild(script);
+  });
+  return scriptLoads[src];
+}
+
+async function ensureHtml2Pdf() {
+  if (window.html2pdf) return;
+  await loadScriptOnce(HTML2PDF_URL);
+  if (!window.html2pdf) throw new Error('PDF 组件不可用');
+}
+
+async function exportPdf(ai) {
+  if (state.exporting) {
+    toast('正在生成 PDF，请稍候');
+    return;
+  }
+  state.exporting = true;
+  let host = null;
+  try {
+    toast('正在生成 PDF…');
+    await ensureHtml2Pdf();
+    const node = buildExportNode(ai, false);
+    host = document.createElement('div');
+    host.className = 'pdf-export-host';
+    host.appendChild(node);
+    document.body.appendChild(host);
+    if (document.fonts && document.fonts.ready) {
+      try { await document.fonts.ready; } catch (_) { /* 忽略 */ }
+    }
+    await new Promise(resolve => setTimeout(resolve, 120));
+    await window.html2pdf().set({
+      margin: [12, 12, 12, 12],
+      filename: exportFileName(ai, 'pdf'),
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['css', 'legacy'] }
+    }).from(node).save();
+    toast('PDF 已导出');
+  } catch (err) {
+    console.error(err);
+    toast('PDF 导出失败，请检查网络后重试');
+  } finally {
+    if (host) host.remove();
+    state.exporting = false;
+  }
 }
 
 /* ---------------- 抽屉 ---------------- */
@@ -1598,9 +2670,24 @@ function closeDrawer() {
   document.body.classList.remove('drawer-open');
 }
 
+function openAttachMenu() {
+  if (state.uploading) {
+    toast('附件正在上传，请稍候');
+    return;
+  }
+  $('#attach-overlay').hidden = false;
+}
+
+function closeAttachMenu() {
+  $('#attach-overlay').hidden = true;
+}
+
 function closeAllOverlays() {
   if (!$('#model-overlay').hidden) closeModelSheet();
-  if (!$('#saved-overlay').hidden) closeSaved();
+  if (!$('#saved-overlay').hidden) closeFavorite();
+  if (!$('#personalize-overlay').hidden) closePersonalize();
+  if (!$('#attach-overlay').hidden) closeAttachMenu();
+  if (!$('#export-overlay').hidden) closeExportSheet();
   closeDrawer();
 }
 
@@ -1632,10 +2719,15 @@ function wireEvents() {
   $('#balance-chip').addEventListener('click', () => refreshBalance(true));
 
   $('#history-list').addEventListener('click', event => {
-    const del = event.target.closest('.h-del');
     const item = event.target.closest('.history-item');
     if (!item) return;
     const id = Number(item.dataset.id);
+    if (state.historyEdit) {
+      event.preventDefault();
+      toggleSessionSelection(id);
+      return;
+    }
+    const del = event.target.closest('.h-del');
     if (del) {
       event.stopPropagation();
       deleteSession(id);
@@ -1644,10 +2736,14 @@ function wireEvents() {
     openSession(id, false);
   });
 
-  $('#error-list').addEventListener('click', event => {
-    const btn = event.target.closest('.error-item');
+  $('#history-edit').addEventListener('click', () => setHistoryEdit(!state.historyEdit));
+  $('#history-select-all').addEventListener('change', event => selectAllSessions(event.target.checked));
+  $('#history-delete-selected').addEventListener('click', deleteSelectedSessions);
+
+  $('#favorite-list').addEventListener('click', event => {
+    const btn = event.target.closest('.favorite-item');
     if (!btn) return;
-    openSaved(Number(btn.dataset.index));
+    openFavorite(Number(btn.dataset.index));
   });
 
   $('#send-btn').addEventListener('click', sendMessage);
@@ -1668,24 +2764,43 @@ function wireEvents() {
     }
   });
   $('#input-box').addEventListener('focus', () => {
-    setTimeout(() => scrollToBottom(true), 120);
+    if (!state.autoScroll) return;
+    setTimeout(() => scrollToBottom(false), 120);
   });
 
-  $('#attach-btn').addEventListener('click', () => {
-    if (state.uploading) {
-      toast('附件正在上传，请稍候');
-      return;
-    }
+  $('#attach-btn').addEventListener('click', openAttachMenu);
+  $('#attach-close').addEventListener('click', closeAttachMenu);
+  $('#attach-overlay').addEventListener('click', event => {
+    if (event.target === $('#attach-overlay')) closeAttachMenu();
+  });
+  $('#attach-camera').addEventListener('click', () => {
+    closeAttachMenu();
+    $('#camera-input').click();
+  });
+  $('#attach-album').addEventListener('click', () => {
+    closeAttachMenu();
+    $('#album-input').click();
+  });
+  $('#attach-file').addEventListener('click', () => {
+    closeAttachMenu();
     $('#file-input').click();
   });
-  $('#file-input').addEventListener('change', async event => {
-    const files = event.target.files;
-    event.target.value = '';
-    await addFiles(files);
+  ['camera-input', 'album-input', 'file-input'].forEach(id => {
+    const input = document.getElementById(id);
+    if (!input) return;
+    input.addEventListener('change', async event => {
+      const files = Array.from(event.target.files || []);
+      event.target.value = '';
+      await addFiles(files);
+    });
   });
 
   $('#chat-scroll').addEventListener('scroll', syncScrollButton);
-  $('#scroll-bottom').addEventListener('click', () => scrollToBottom(true));
+  $('#scroll-bottom').addEventListener('click', () => {
+    state.autoScroll = true;
+    state.hasNewContent = false;
+    scrollToBottom(true);
+  });
 
   $('#model-close').addEventListener('click', closeModelSheet);
   $('#model-overlay').addEventListener('click', event => {
@@ -1700,24 +2815,67 @@ function wireEvents() {
     $('#toggle-key').textContent = show ? '隐藏' : '显示';
   });
 
-  $('#saved-close').addEventListener('click', closeSaved);
-  $('#saved-close-bottom').addEventListener('click', closeSaved);
+  $('#saved-close').addEventListener('click', closeFavorite);
+  $('#saved-close-bottom').addEventListener('click', closeFavorite);
   $('#saved-overlay').addEventListener('click', event => {
-    if (event.target === $('#saved-overlay')) closeSaved();
+    if (event.target === $('#saved-overlay')) closeFavorite();
   });
   $('#saved-copy').addEventListener('click', () => {
-    const item = state.errorBook[state.savedIndex];
+    const item = state.favorites[state.favoriteIndex];
     if (!item) return;
     copyText(item.answer || '').then(() => toast('已复制答案')).catch(() => toast('复制失败'));
   });
   $('#saved-delete').addEventListener('click', () => {
-    if (state.savedIndex < 0) return;
-    if (!confirm('从错题本删除这道题？')) return;
-    state.errorBook.splice(state.savedIndex, 1);
-    saveErrorBook();
-    renderErrorBook();
-    closeSaved();
-    toast('已删除');
+    if (state.favoriteIndex < 0) return;
+    if (!confirm('删除这条收藏？')) return;
+    state.favorites.splice(state.favoriteIndex, 1);
+    saveFavorites();
+    renderFavorites();
+    closeFavorite();
+    toast('已删除收藏');
+  });
+
+  $('#export-close').addEventListener('click', closeExportSheet);
+  $('#export-overlay').addEventListener('click', event => {
+    if (event.target === $('#export-overlay')) closeExportSheet();
+  });
+  $('#export-txt').addEventListener('click', () => {
+    const ai = state.exportAi;
+    closeExportSheet();
+    if (ai) exportTxt(ai);
+  });
+  $('#export-word').addEventListener('click', () => {
+    const ai = state.exportAi;
+    closeExportSheet();
+    if (ai) exportWord(ai);
+  });
+  $('#export-pdf').addEventListener('click', () => {
+    const ai = state.exportAi;
+    closeExportSheet();
+    if (ai) exportPdf(ai);
+  });
+
+  $('#edit-cancel').addEventListener('click', () => cancelEdit(true));
+  $('#think-toggle').addEventListener('click', () => setDeepThinking(!state.deepThinking));
+  $('#web-toggle').addEventListener('click', () => setWebSearch(!state.webSearch));
+
+  $('#personalize-btn').addEventListener('click', openPersonalize);
+  $('#personalize-close').addEventListener('click', closePersonalize);
+  $('#personalize-overlay').addEventListener('click', event => {
+    if (event.target === $('#personalize-overlay')) closePersonalize();
+  });
+  $('#personal-save').addEventListener('click', savePersonalize);
+  $('#personal-clear').addEventListener('click', clearPersonalize);
+  $('#font-size-range').addEventListener('input', event => {
+    setAnswerFontSize(event.target.value, true);
+  });
+  $('#font-size-reset').addEventListener('click', () => {
+    setAnswerFontSize(DEFAULT_ANSWER_FONT_SIZE, true);
+    toast('已恢复默认字号');
+  });
+  $('#personal-prompt').addEventListener('input', event => {
+    const count = $('#personal-count');
+    if (count) count.textContent = event.target.value.length + ' / 2000';
   });
 
   document.addEventListener('keydown', event => {
@@ -1728,8 +2886,8 @@ function wireEvents() {
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', () => {
       syncViewport();
-      if (document.activeElement === $('#input-box')) {
-        setTimeout(() => scrollToBottom(true), 80);
+      if (state.autoScroll && document.activeElement === $('#input-box')) {
+        setTimeout(() => scrollToBottom(false), 80);
       }
     });
   }
@@ -1740,7 +2898,10 @@ async function init() {
   wireEvents();
   syncViewport();
   initConfig();
-  loadErrorBook();
+  loadFeaturePrefs();
+  loadAnswerFontSize();
+  loadFavorites();
+  loadPersonalPrompt();
   loadSessions();
   refreshBalance(false);
 

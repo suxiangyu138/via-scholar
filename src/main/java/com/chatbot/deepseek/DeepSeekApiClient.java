@@ -33,6 +33,68 @@ public class DeepSeekApiClient {
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
+    /** 一条联网搜索结果。 */
+    public record SearchResult(String title, String url, String snippet,
+                               String summary, String date, String siteName) {}
+
+    /** 调用 DeepSeek Search API，异常时由调用方回退到无搜索结果。 */
+    public List<SearchResult> search(String apiKey, String baseUrl,
+                                     String query, int count) throws IOException {
+        if (apiKey == null || apiKey.isBlank() || query == null || query.isBlank()) {
+            return List.of();
+        }
+        String q = query.trim();
+        if (q.length() > 128) {
+            q = q.substring(0, 128);
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("query", q);
+        body.put("count", Math.max(1, Math.min(5, count)));
+        body.put("need_content", false);
+        body.put("ori_question", q);
+        String payload = MAPPER.writeValueAsString(body);
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(apiRoot(baseUrl) + "/v1/tools/search"))
+                .header("Authorization", "Bearer " + apiKey)
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .timeout(Duration.ofSeconds(6))
+                .POST(HttpRequest.BodyPublishers.ofString(payload, StandardCharsets.UTF_8))
+                .build();
+        try {
+            HttpResponse<String> response = HTTP.send(request,
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() != HTTP_OK) {
+                throw new IOException("HTTP " + response.statusCode() + ": "
+                        + truncate(response.body()));
+            }
+            JsonNode results = MAPPER.readTree(response.body()).path("results");
+            List<SearchResult> list = new ArrayList<>();
+            if (results.isArray()) {
+                for (JsonNode node : results) {
+                    String title = node.path("title").asText("");
+                    String url = node.path("url").asText("");
+                    if (title.isBlank() || url.isBlank()) {
+                        continue;
+                    }
+                    String snippet = truncate(node.path("snippet").asText(""), 240);
+                    String summary = truncate(node.path("summary").asText(""), 600);
+                    if (summary.isBlank()) {
+                        summary = snippet;
+                    }
+                    String date = node.path("date").asText("");
+                    String site = node.path("site_name").asText("");
+                    list.add(new SearchResult(title, url, snippet, summary, date, site));
+                }
+            }
+            return list;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("搜索请求被中断", e);
+        }
+    }
+
     public List<Map<String, Object>> listModels(String apiKey, String baseUrl) throws IOException {
         JsonNode root = get(apiRoot(baseUrl) + "/models", apiKey);
         JsonNode data = root.path("data");
@@ -135,9 +197,14 @@ public class DeepSeekApiClient {
     }
 
     private static String truncate(String text) {
+        return truncate(text, 300);
+    }
+
+    private static String truncate(String text, int max) {
         if (text == null) {
             return "";
         }
-        return text.length() > 300 ? text.substring(0, 300) + "…" : text;
+        String value = text.trim();
+        return value.length() > max ? value.substring(0, max) + "…" : value;
     }
 }

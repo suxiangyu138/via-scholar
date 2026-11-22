@@ -4,11 +4,11 @@
 
 ## 产品
 
-**问道 Via Scholar** 是面向 K12 教师与学生的教学智能体，Agent 名 **Pathfinder**，模型只用 **DeepSeek**。
+**问道 Via Scholar** 是面向 K12 教师与学生的全学科教学智能体，Agent 名 **Pathfinder**，模型只用 **DeepSeek**。
 
 - 学生：分步解题、概念讲解、错题订正、同类练习
 - 教师：教学目标、课堂引入、例题与变式、易错点、分层作业
-- 学段：小学、初中、高中；不主动引入大学数学
+- 学段：小学、初中、高中；全学科（语数英、理化生、政史地、科学、信息科技、通用技术及素质课程），不因学科拒答
 - RAG 已从产品下线，`com.chatbot.rag` 代码保留但不参与对话
 
 ## 构建与运行
@@ -69,6 +69,28 @@ POST /api/chat { messages, attachments:[id] }
 
 `DeepSeekApiClient.apiRoot()` 会去掉末尾 `/`、`/v1` 或 `/chat/completions`，再拼接 `/models`、`/user/balance`；对话仍使用用户填写的 baseUrl + `/chat/completions`。
 
+## 前端状态
+
+- 历史会话：H2 持久化；侧边栏“编辑”进入多选，支持全选、批量删除（`POST /api/history/sessions/delete`）
+- 收藏：回答结束后“收藏”写入 `localStorage` 的 `viaScholarFavoritesV1`，侧边栏“我的收藏”可查看、复制、删除
+- 个性化：`localStorage` 的 `viaScholarPersonalPromptV1`，每次对话作为 `customInstructions` 发送，服务端追加到系统提示词末尾并限制 2000 字
+- 阅读字号：`localStorage` 的 `viaScholarAnswerFontSizeV1`，范围 12–22，默认 14；通过 `--answer-size` 控制 `.answer`、收藏正文和预览，标题/代码/表格用 em 跟随
+- 深度思考：`localStorage` 的 `viaScholarDeepThinkingV1`，默认关闭；关闭时请求 `thinking:{type:"disabled"}`，开启时 `thinking:{type:"enabled"}` + `reasoning_effort:"max"`
+- 联网搜索：`localStorage` 的 `viaScholarWebSearchV1`，默认开启；后端调用 DeepSeek `/v1/tools/search`，结果作为外部资料注入系统提示词，搜索失败不阻断对话
+- 重新编辑/重新生成：用户消息带 `msgId`；先调用 `/api/history/messages/truncate` 截断该消息及后续，再重新发送或生成；错误框提供重试按钮
+- 回答标题：提示词要求每次回答以 `### 标题` 开头；前端用首个标题做收藏标题，收藏详情中不重复显示
+- 滚动：`state.autoScroll` 记录是否跟随底部；用户上翻后停止自动滚动并标记新内容，`finishAi` 不再强制回底
+- 导出：每条回答操作栏可导出 TXT / Word(原生 .docx) / PDF；TXT/Word 保留 LaTeX 源码，PDF 用 html2pdf 按需加载并保留公式、代码、表格排版；文件名为标题＋`YYYYMMDD_HHmmss_SSS`
+
+## 渲染
+
+- Markdown 先经 `marked` 解析，再用 KaTeX `renderMathInElement` 渲染公式，避免先替换公式破坏 Markdown。
+- 已加载 `mhchem`，支持 `\ce{...}` 化学式/方程式；已加载 `auto-render`，支持 `$...$`、`$$...$$`、`\(...\)`、`\[...\]`。
+- 代码块按语言高亮，未标注语言时用 highlight.js 自动识别；代码块内的 `**`、`$` 不会被误处理。
+- 中文标点后的 `**加粗**` 由前端预处理保证渲染；答案正文与标题左对齐。
+- 回答首行支持 `<!--via-meta {"subject":"...","type":"...","grade":"..."}-->`，解析后显示类型标签，元数据不进入正文。
+- 流式渲染用未闭合分隔符扫描：公式或代码未闭合时先按纯文本显示，闭合后再走正常渲染。
+
 ## 费用
 
 `DeepSeekPricing` 按官方美元价（每百万 token）估算：
@@ -76,13 +98,13 @@ POST /api/chat { messages, attachments:[id] }
 - `deepseek-flash`：命中 0.006/0.003，未命中 0.30/0.15，输出 1.20/0.60
 - `deepseek-v4-pro`：命中 0.044/0.022，未命中 1.32/0.66，输出 3.96/1.98
 
-斜线前为高峰价、后为低峰价。高峰为 UTC 周一至周五 `01:00-04:00`、`06:00-10:00`；未接入法定节假日，前端标注为估算。未知模型 `costUsd` 为 null。
+斜线前为高峰价、后为低峰价。高峰为 UTC 周一至周五 `01:00-04:00`、`06:00-10:00`；未接入法定节假日。前端按 1 USD ≈ 7.1 CNY 折算为人民币，用 `≈¥` 表示估算，实际以账单为准。未知模型 `costUsd` 为 null。
 
 ## 前端
 
 - `static/index.html`：结构
 - `static/assets/app.css`：白底极简样式；1024px 以下侧边栏变抽屉，760px 以下收紧顶栏
-- `static/assets/app.js`：配置、余额、模型弹层、附件上传、SSE、Markdown/KaTeX、指标、历史、错题本
+- `static/assets/app.js`：配置、余额、模型弹层、附件/相册上传、SSE、Marked + KaTeX auto-render + mhchem + highlight.js、指标、历史多选、收藏、个性化提示词
 - 外部 CDN：KaTeX、highlight.js、marked；DOMPurify 本地
 - `localStorage`：`deepseekConfigV2`、`currentDbSessionId`、`mathErrorBook`
 - 旧配置会从 `modelConfigs.deepseek` 迁移，旧模型名映射到 `deepseek-flash` / `deepseek-v4-pro`

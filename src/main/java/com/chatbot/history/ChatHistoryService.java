@@ -110,6 +110,7 @@ public class ChatHistoryService {
         List<Map<String, Object>> result = new ArrayList<>();
         for (ChatMessageEntity m : msgs) {
             Map<String, Object> item = new LinkedHashMap<>();
+            item.put("msgId", m.getMsgId());
             item.put("role", m.getRole());
             item.put("content", m.getRawContent());
             if (m.getThinkRaw() != null && !m.getThinkRaw().isEmpty()) {
@@ -129,6 +130,35 @@ public class ChatHistoryService {
         return result;
     }
 
+    /** 从指定消息开始删除其后的全部消息，用于重新编辑/重新生成。 */
+    @Transactional
+    public int truncateFrom(Long sessionId, Long fromMsgId, String sid) {
+        if (sessionId == null || fromMsgId == null || !isSessionOwned(sessionId, sid)) {
+            return 0;
+        }
+        List<ChatMessageEntity> all = messageRepo.findBySessionIdOrderByCreateTimeAsc(sessionId);
+        boolean targetExists = all.stream()
+                .anyMatch(message -> fromMsgId.equals(message.getMsgId()));
+        if (!targetExists) {
+            return 0;
+        }
+        List<ChatMessageEntity> toDelete = new ArrayList<>();
+        for (ChatMessageEntity message : all) {
+            if (message.getMsgId() != null && message.getMsgId() >= fromMsgId) {
+                toDelete.add(message);
+            }
+        }
+        if (toDelete.isEmpty()) {
+            return 0;
+        }
+        messageRepo.deleteAll(toDelete);
+        sessionRepo.findById(sessionId).ifPresent(s -> {
+            s.setUpdateTime(java.time.LocalDateTime.now());
+            sessionRepo.save(s);
+        });
+        return toDelete.size();
+    }
+
     /** 逻辑删除会话（仅归属会话可删） */
     @Transactional
     public void deleteSession(Long sessionId, String sid) {
@@ -139,6 +169,29 @@ public class ChatHistoryService {
             s.setDeleted(true);
             sessionRepo.save(s);
         });
+    }
+
+    /** 批量逻辑删除会话，返回实际删除数量（仅归属会话可删） */
+    @Transactional
+    public int deleteSessions(List<Long> sessionIds, String sid) {
+        if (sessionIds == null || sessionIds.isEmpty()) {
+            return 0;
+        }
+        int deleted = 0;
+        for (Long id : new LinkedHashSet<>(sessionIds)) {
+            if (id == null || !isSessionOwned(id, sid)) {
+                continue;
+            }
+            Optional<ChatSessionEntity> found = sessionRepo.findById(id);
+            if (found.isEmpty() || found.get().isDeleted()) {
+                continue;
+            }
+            ChatSessionEntity session = found.get();
+            session.setDeleted(true);
+            sessionRepo.save(session);
+            deleted++;
+        }
+        return deleted;
     }
 
     /** 重命名会话（仅归属会话可改） */

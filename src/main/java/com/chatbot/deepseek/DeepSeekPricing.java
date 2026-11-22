@@ -10,7 +10,7 @@ import java.time.ZonedDateTime;
 /**
  * DeepSeek 官方价格估算。
  * <p>
- * 价格来源：DeepSeek Models & Pricing（USD / 1M tokens）。
+ * 价格来源：DeepSeek Models & Pricing（USD / 1M tokens）；前端按固定汇率折算人民币展示。
  * 高峰时段为 UTC 周一至周五 01:00-04:00、06:00-10:00，其余时段为低峰（五折）。
  * 官方说明中国法定节假日全天按低峰计价，这里未接节假日表，费用按“估算”展示。
  *

@@ -3,7 +3,7 @@ package com.chatbot.model;
 /**
  * 一次回答的完整观测指标：token 用量、缓存命中、首 token 延迟、输出速率与估算费用。
  * <p>
- * 费用以美元计价（DeepSeek 官方价格页以 USD 标注），由服务端按当前时段费率估算。
+ * 费用源数据以美元计价（DeepSeek 官方价格页以 USD 标注），由服务端按当前时段费率估算，前端再折算为人民币展示。
  *
  * @author Via Scholar
  */
@@ -21,7 +21,7 @@ public class UsageMetrics {
     private long ttftMs;
     /** 首 token 之后的输出速率（tokens/s） */
     private double outputTps;
-    /** 估算费用（美元），未知模型为 null */
+    /** 估算费用（美元），未知模型为 null；前端按固定汇率折算为人民币 */
     private Double costUsd;
     /** 是否处于官方高峰计费时段 */
     private boolean peak;
