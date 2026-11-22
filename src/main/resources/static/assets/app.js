@@ -36,7 +36,8 @@ const LS = {
   personalPrompt: 'viaScholarPersonalPromptV1',
   answerFontSize: 'viaScholarAnswerFontSizeV1',
   deepThinking: 'viaScholarDeepThinkingV1',
-  webSearch: 'viaScholarWebSearchV1'
+  webSearch: 'viaScholarWebSearchV1',
+  teachingContext: 'viaScholarTeachingContextV1'
 };
 
 const AVATAR_SVG = '<img src="/assets/brand-mark-black.png" alt="">';
@@ -46,6 +47,7 @@ const BOOKMARK_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="M6 4h12v17l-
 const EXPORT_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 4v11M7 10l5 5 5-5M5 20h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const EDIT_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="m4 16-.7 4.7L8 20l11-11-3-3L4 16Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m13.5 6.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
 const REGEN_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const TOC_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="M9 6h11M9 12h11M9 18h11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M4 6h.01M4 12h.01M4 18h.01" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
 const HTML2PDF_URL = 'https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.3/dist/html2pdf.bundle.min.js';
 const DOCX_URL = 'https://cdn.jsdelivr.net/npm/docx@9.5.1/dist/index.iife.js';
 const scriptLoads = Object.create(null);
@@ -64,12 +66,15 @@ const state = {
   favorites: [],
   favoriteIndex: -1,
   historySessions: [],
+  visibleSessions: [],
+  historyQuery: '',
   historyEdit: false,
   selectedSessions: new Set(),
   personalPrompt: '',
   answerFontSize: DEFAULT_ANSWER_FONT_SIZE,
   deepThinking: false,
   webSearch: true,
+  teaching: { stage: 'auto', subject: 'auto', role: 'auto', textbook: '通用' },
   balanceLoading: false,
   autoScroll: true,
   lastScrollTop: 0,
@@ -77,6 +82,7 @@ const state = {
   exportAi: null,
   exporting: false,
   pendingEdit: null,
+  startMode: '',
   attachments: [],
   uploading: false,
   attachSeq: 0,
@@ -146,6 +152,112 @@ function sanitizeHtml(html) {
   }
 }
 
+function countUnescapedDoubleDollars(line) {
+  let count = 0;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '\\') { i++; continue; }
+    if (line.startsWith('$$', i)) { count++; i++; }
+  }
+  return count;
+}
+
+function countUnescapedSingleDollars(line) {
+  let count = 0;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '\\') { i++; continue; }
+    if (line.startsWith('$$', i)) { i++; continue; }
+    if (line[i] === '$') count++;
+  }
+  return count;
+}
+
+function looksLikeProse(line) {
+  const text = String(line || '').trim();
+  if (!text || !/[\u4e00-\u9fff]/.test(text)) return false;
+  return !/[\\^_{}=<>*/]/.test(text);
+}
+
+/**
+ * 模型偶尔会漏掉闭合的 $ 或 $$。在渲染前按行修复：
+ * - 未闭合的显示公式在空行或中文说明前补上 $$；
+ * - 单行未闭合的行内公式在行尾补上 $。
+ * 代码块和行内代码不参与修复。
+ */
+function repairLatexContent(tex) {
+  let out = String(tex == null ? '' : tex).trim();
+  out = out.replace(/\\\s*$/, '');
+  const opens = (out.match(/(?<!\\)\{/g) || []).length;
+  const closes = (out.match(/(?<!\\)\}/g) || []).length;
+  if (opens > closes) out += '}'.repeat(opens - closes);
+  const lefts = (out.match(/\\left(?![a-zA-Z])/g) || []).length;
+  const rights = (out.match(/\\right(?![a-zA-Z])/g) || []).length;
+  if (lefts > rights) out += '\\right.'.repeat(lefts - rights);
+  return out;
+}
+
+function repairMathDelimiters(rawText) {
+  const original = String(rawText == null ? '' : rawText);
+  if (!original.includes('$')) return original;
+
+  const codeSegments = [];
+  const token = 'MATHFIX' + Math.random().toString(36).slice(2).toUpperCase() + '_';
+  let text = original.replace(/```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`/g, match => {
+    codeSegments.push(match);
+    return token + 'C' + (codeSegments.length - 1) + 'X';
+  });
+
+  const lines = text.split('\n');
+  const out = [];
+  let display = false;
+
+  const repairInline = line => {
+    const singles = countUnescapedSingleDollars(line);
+    return singles % 2 === 1 ? line + '$' : line;
+  };
+
+  for (const line of lines) {
+    if (!display) {
+      const doubles = countUnescapedDoubleDollars(line);
+      if (doubles % 2 === 1) {
+        display = true;
+        out.push(line);
+        continue;
+      }
+      out.push(repairInline(line));
+      continue;
+    }
+
+    const doubles = countUnescapedDoubleDollars(line);
+    if (doubles % 2 === 1) {
+      display = false;
+      out.push(line);
+      continue;
+    }
+    if (!line.trim()) {
+      out.push('$$');
+      out.push(line);
+      display = false;
+      continue;
+    }
+    if (looksLikeProse(line)) {
+      out.push('$$');
+      out.push(repairInline(line));
+      display = false;
+      continue;
+    }
+    out.push(line);
+  }
+
+  if (display) out.push('$$');
+
+  let fixed = out.join('\n');
+  fixed = fixed.replace(/\$\$([\s\S]*?)\$\$/g, (match, inner) => '$$' + repairLatexContent(inner) + '$$');
+  codeSegments.forEach((segment, index) => {
+    fixed = fixed.split(token + 'C' + index + 'X').join(segment);
+  });
+  return fixed;
+}
+
 function prepareMarkdown(text) {
   const codeSegments = [];
   const mathSegments = [];
@@ -182,41 +294,45 @@ function restoreMath(html, prepared) {
   return out;
 }
 
+function renderMathSegment(segment) {
+  const display = segment.startsWith('$$') && segment.endsWith('$$');
+  let tex = display ? segment.slice(2, -2) : segment.slice(1, -1);
+  tex = repairLatexContent(tex);
+  if (!window.katex || typeof window.katex.renderToString !== 'function') {
+    return escapeHtml(segment);
+  }
+  try {
+    return window.katex.renderToString(tex, {
+      displayMode: display,
+      throwOnError: false,
+      strict: false,
+      trust: true
+    });
+  } catch (_) {
+    return '<span class="math-render-error">公式无法渲染</span>';
+  }
+}
+
+function renderPreparedMath(html, prepared) {
+  let out = html;
+  prepared.math.forEach((segment, index) => {
+    out = out.split(prepared.token + 'M' + index + 'X')
+      .join(renderMathSegment(segment));
+  });
+  return out;
+}
+
 function renderMarkdown(rawText) {
-  const text = String(rawText == null ? '' : rawText);
+  const text = repairMathDelimiters(String(rawText == null ? '' : rawText));
   if (!window.marked) {
     return escapeHtml(text).replace(/\n/g, '<br>');
   }
   let html;
   try {
     const prepared = prepareMarkdown(text);
-    html = restoreMath(window.marked.parse(prepared.text), prepared);
+    html = renderPreparedMath(window.marked.parse(prepared.text), prepared);
   } catch (_) {
     return escapeHtml(text).replace(/\n/g, '<br>');
-  }
-  html = sanitizeHtml(html);
-
-  const renderMath = window.renderMathInElement
-    || (window.katex && window.katex.renderMathInElement);
-  if (renderMath) {
-    const wrap = document.createElement('div');
-    wrap.innerHTML = html;
-    try {
-      renderMath(wrap, {
-        delimiters: [
-          { left: '$$', right: '$$', display: true },
-          { left: '\\[', right: '\\]', display: true },
-          { left: '$', right: '$', display: false },
-          { left: '\\(', right: '\\)', display: false }
-        ],
-        throwOnError: false,
-        errorColor: '#d92d20',
-        strict: false,
-        trust: true,
-        ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code', 'option']
-      });
-      html = wrap.innerHTML;
-    } catch (_) { /* 保留未渲染的 Markdown */ }
   }
   return sanitizeHtml(html);
 }
@@ -931,6 +1047,7 @@ async function sendMessage() {
   input.value = '';
   resizeInput();
   input.focus();
+  if (state.startMode) setStartMode('', false);
   state.lastQuestion = text;
   state.lastAnswer = '';
   state.autoScroll = true;
@@ -966,6 +1083,11 @@ async function sendMessage() {
   if (state.personalPrompt) body.customInstructions = state.personalPrompt;
   body.deepThinking = !!state.deepThinking;
   body.webSearch = !!state.webSearch;
+  const teaching = teachingPayload();
+  body.stage = teaching.stage;
+  body.subject = teaching.subject;
+  body.role = teaching.role;
+  body.textbook = teaching.textbook;
 
   try {
     const res = await fetch('/api/chat', {
@@ -1230,6 +1352,7 @@ async function beginEdit(row) {
     return;
   }
   const input = $('#input-box');
+  if (state.startMode) setStartMode('', false);
   const text = row.dataset.rawText || '';
   state.pendingEdit = {
     row: row,
@@ -1276,6 +1399,211 @@ async function regenerateAnswer(ai) {
   }
 }
 
+let tocSeq = 0;
+
+function decorateAnswer(ai) {
+  const root = ai && ai.answer;
+  if (!root) return;
+
+  root.querySelectorAll('pre').forEach(pre => {
+    if (pre.parentElement && pre.parentElement.classList.contains('teaching-code')) return;
+    const code = pre.querySelector('code');
+    if (!code) return;
+    const langMatch = (code.className || '').match(/language-([\w-]+)/);
+    const lang = langMatch ? langMatch[1] : '';
+    const block = document.createElement('div');
+    block.className = 'teaching-block teaching-code';
+    const head = document.createElement('div');
+    head.className = 'teaching-head';
+    const label = document.createElement('span');
+    label.textContent = lang ? '代码 · ' + lang.toUpperCase() : '代码';
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'block-copy';
+    copy.textContent = '复制代码';
+    copy.addEventListener('click', () => {
+      copyText(code.textContent || '').then(() => toast('代码已复制')).catch(() => toast('复制失败'));
+    });
+    head.appendChild(label);
+    head.appendChild(copy);
+    pre.parentNode.insertBefore(block, pre);
+    block.appendChild(head);
+    block.appendChild(pre);
+  });
+
+  root.querySelectorAll('table').forEach(table => {
+    if (table.parentElement && table.parentElement.classList.contains('table-wrap')) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'table-wrap';
+    wrap.title = '左右滑动查看完整表格';
+    table.parentNode.insertBefore(wrap, table);
+    wrap.appendChild(table);
+    requestAnimationFrame(() => {
+      if (!wrap.isConnected || wrap.scrollWidth <= wrap.clientWidth + 4) return;
+      const prev = wrap.previousElementSibling;
+      if (prev && prev.classList.contains('table-hint')) return;
+      const hint = document.createElement('div');
+      hint.className = 'table-hint';
+      hint.textContent = '左右滑动查看完整表格';
+      wrap.parentNode.insertBefore(hint, wrap);
+    });
+  });
+
+  root.querySelectorAll('p, ul, ol').forEach(block => {
+    const text = (block.textContent || '').trim();
+    if (text.length <= 320 && /^(来源|参考|参考资料|References?)[：:]/i.test(text)
+        && block.querySelector('a[href^="http"]')) {
+      block.classList.add('source-line');
+    }
+  });
+
+  const links = [];
+  const seen = new Set();
+  root.querySelectorAll('a[href^="http"]').forEach(a => {
+    const href = a.getAttribute('href');
+    if (!href || seen.has(href)) return;
+    seen.add(href);
+    links.push({ href: href, title: (a.textContent || href).trim() });
+  });
+  if (links.length) {
+    const box = document.createElement('div');
+    box.className = 'answer-sources';
+    const label = document.createElement('span');
+    label.className = 'source-label';
+    label.textContent = '参考链接';
+    box.appendChild(label);
+    links.slice(0, 8).forEach(link => {
+      const a = document.createElement('a');
+      a.className = 'source-chip';
+      a.href = link.href;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = link.title.slice(0, 28);
+      a.title = link.href;
+      box.appendChild(a);
+    });
+    root.appendChild(box);
+  }
+}
+
+function refreshAnswerStructure(ai) {
+  if (!ai || !ai.answer || !ai.reading || !ai.tocBtn) return;
+  if (!ai.raw) {
+    ai.reading.hidden = true;
+    ai.tocBtn.hidden = true;
+    hideTocRail();
+    return;
+  }
+  const headings = Array.from(ai.answer.querySelectorAll('h2,h3,h4'))
+    .filter(h => (h.textContent || '').trim());
+  if (headings.length && headings[0] === ai.answer.firstElementChild) {
+    headings.shift();
+  }
+  headings.forEach(h => {
+    if (!h.id) h.id = 'toc-h-' + (++tocSeq);
+  });
+  ai.toc = headings.map(h => ({
+    id: h.id,
+    text: (h.textContent || '').trim().slice(0, 60),
+    depth: Number(h.tagName.slice(1))
+  }));
+  const chars = String(ai.raw || '').replace(/\s/g, '').length;
+  const minutes = Math.max(1, Math.ceil(chars / 400));
+  ai.reading.textContent = '约 ' + minutes + ' 分钟'
+    + (ai.toc.length ? ' · ' + ai.toc.length + ' 节' : '');
+  ai.reading.hidden = false;
+  ai.tocBtn.hidden = ai.toc.length === 0;
+  const answers = $$('#chat-list .msg.ai');
+  if (answers.length && answers[answers.length - 1] === ai.row) {
+    renderTocRail(ai);
+  }
+}
+
+function renderTocRail(ai) {
+  const rail = $('#toc-rail');
+  const list = $('#toc-rail-list');
+  if (!rail || !list) return;
+  if (!ai || !ai.toc || !ai.toc.length) {
+    rail.hidden = true;
+    list.innerHTML = '';
+    return;
+  }
+  list.innerHTML = '';
+  ai.toc.forEach(item => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toc-link' + (item.depth >= 3 ? ' depth-3' : '');
+    btn.textContent = item.text;
+    btn.title = item.text;
+    btn.addEventListener('click', () => scrollToHeading(item.id));
+    list.appendChild(btn);
+  });
+  rail.hidden = false;
+}
+
+function scrollToHeading(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderTocOverlay(ai) {
+  const list = $('#toc-overlay-list');
+  if (!list) return;
+  list.innerHTML = '';
+  ai.toc.forEach(item => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toc-link' + (item.depth >= 3 ? ' depth-3' : '');
+    btn.textContent = item.text;
+    btn.addEventListener('click', () => {
+      closeToc();
+      scrollToHeading(item.id);
+    });
+    list.appendChild(btn);
+  });
+}
+
+function openToc(ai) {
+  if (!ai || !ai.toc || !ai.toc.length) {
+    toast('这条回答还没有分节目录');
+    return;
+  }
+  renderTocOverlay(ai);
+  $('#toc-overlay').hidden = false;
+}
+
+function closeToc() {
+  $('#toc-overlay').hidden = true;
+}
+
+function hideTocRail() {
+  renderTocRail(null);
+}
+
+function askTeachingAction(ai, action) {
+  if (!ai || !ai.raw) {
+    toast('这条回答还不能生成教学动作');
+    return;
+  }
+  if (state.loading) {
+    toast('正在生成回答，请稍后再试');
+    return;
+  }
+  const prompts = {
+    board: '请基于上一题，整理一页可直接用于课堂的板书提纲：标题、核心公式或概念、推导步骤、易错点，用 ### 分节，简洁呈现。',
+    similar: '请基于上一题，生成 3 道同类型变式题，难度由易到难，题干与答案分开，答案放在题目之后并标注“答案”，不要重复原题。',
+    homework: '请基于上一题，设计基础、提升、拓展三层作业，每层 2 道题，附答案和简要提示，用 ### 分层。'
+  };
+  const text = prompts[action];
+  if (!text) return;
+  const input = $('#input-box');
+  input.value = text;
+  resizeInput();
+  input.focus();
+  sendMessage();
+}
+
 function createAiMessage(question) {
   hideWelcome();
   const row = document.createElement('div');
@@ -1284,14 +1612,21 @@ function createAiMessage(question) {
     '<div class="ai-main">' +
       '<div class="ai-meta">' +
         '<span class="ai-avatar" aria-hidden="true">' + AVATAR_SVG + '</span>' +
-        '<span class="ai-name">Pathfinder</span><span class="ai-status">正在连接…</span><span class="ai-tags" hidden></span>' +
+        '<span class="ai-name">Pathfinder</span><span class="ai-status">正在连接…</span><span class="ai-tags" hidden></span><span class="ai-reading" hidden></span>' +
       '</div>' +
       '<details class="think" hidden><summary>推理过程</summary><div class="think-body"></div></details>' +
       '<div class="answer"><span class="typing"><i></i><i></i><i></i></span></div>' +
       '<div class="metrics" hidden></div>' +
+      '<div class="teaching-actions" hidden>' +
+        '<span class="teach-label">教学动作</span>' +
+        '<button type="button" class="teach-action" data-teach="board">板书提纲</button>' +
+        '<button type="button" class="teach-action" data-teach="similar">同类题</button>' +
+        '<button type="button" class="teach-action" data-teach="homework">分层作业</button>' +
+      '</div>' +
       '<div class="msg-actions" hidden>' +
         '<button type="button" class="msg-action act-copy">' + COPY_SVG + '复制</button>' +
         '<button type="button" class="msg-action act-save">' + BOOKMARK_SVG + '收藏</button>' +
+        '<button type="button" class="msg-action act-toc" hidden>' + TOC_SVG + '目录</button>' +
         '<button type="button" class="msg-action act-regen">' + REGEN_SVG + '重新生成</button>' +
         '<button type="button" class="msg-action act-export">' + EXPORT_SVG + '导出</button>' +
       '</div>' +
@@ -1305,7 +1640,11 @@ function createAiMessage(question) {
     thinkBody: row.querySelector('.think-body'),
     status: row.querySelector('.ai-status'),
     tags: row.querySelector('.ai-tags'),
+    reading: row.querySelector('.ai-reading'),
+    tocBtn: row.querySelector('.act-toc'),
+    toc: [],
     metricsEl: row.querySelector('.metrics'),
+    teachingActions: row.querySelector('.teaching-actions'),
     actions: row.querySelector('.msg-actions'),
     raw: '',
     thinkRaw: '',
@@ -1316,14 +1655,25 @@ function createAiMessage(question) {
     finished: false,
     smoothBuf: '',
     smoothText: '',
-    smoothTimer: null
+    smoothTimer: null,
+    thinkTimer: null,
+    thinkRendered: false
   };
+
+  ai.think.addEventListener('toggle', () => {
+    if (ai.think.open) renderThinking(ai, ai.finished);
+  });
 
   row.querySelector('.act-copy').addEventListener('click', () => copyAnswer(ai));
   row.querySelector('.act-save').addEventListener('click', () => saveAnswer(ai));
+  row.querySelectorAll('.teach-action').forEach(btn => {
+    btn.addEventListener('click', () => askTeachingAction(ai, btn.dataset.teach));
+  });
+  row.querySelector('.act-toc').addEventListener('click', () => openToc(ai));
   row.querySelector('.act-regen').addEventListener('click', () => regenerateAnswer(ai));
   row.querySelector('.act-export').addEventListener('click', () => openExportSheet(ai));
   state.currentAi = ai;
+  hideTocRail();
   scrollToBottom(true);
   return ai;
 }
@@ -1332,39 +1682,72 @@ function addStaticAi(text, thinkRaw, question, usage) {
   const ai = createAiMessage(question);
   const parsed = parseAnswerMeta(text || '');
   ai.finished = true;
-  ai.raw = parsed.text;
+  ai.raw = repairMathDelimiters(parsed.text);
   ai.title = extractAnswerTitle(ai.raw);
   ai.answer.classList.add('markdown');
   ai.answer.innerHTML = ai.raw
     ? renderMarkdown(ai.raw, true)
     : '<span class="muted">（空回答）</span>';
   renderAnswerMeta(ai, parsed.meta);
+  try { if (ai.raw) decorateAnswer(ai); } catch (_) { /* 装饰失败不影响正文 */ }
+  try { refreshAnswerStructure(ai); } catch (_) { /* 目录失败不影响正文 */ }
   if (thinkRaw) {
     ai.thinkRaw = thinkRaw;
     ai.think.hidden = false;
     ai.think.querySelector('summary').textContent = '推理过程';
-    ai.thinkBody.innerHTML = renderMarkdown(thinkRaw, true);
+    if (ai.think.open) renderThinking(ai, true);
   }
   updateStatus(ai, '');
   if (usage) renderMetrics(ai, usage);
   ai.actions.hidden = false;
+  if (ai.teachingActions) ai.teachingActions.hidden = !ai.raw;
   state.lastAnswer = ai.raw;
+}
+
+const MAX_THINK_RENDER = 9000;
+
+function thinkPreview(raw) {
+  const text = String(raw || '');
+  if (text.length <= MAX_THINK_RENDER) return text;
+  return text.slice(0, MAX_THINK_RENDER) + '\n\n…（推理过程过长，后续已省略）';
+}
+
+function renderThinking(ai, final) {
+  if (!ai || !ai.thinkBody || !ai.thinkRaw) return;
+  if (final) {
+    ai.thinkRendered = true;
+    ai.thinkBody.classList.add('think-rendered');
+    ai.thinkBody.innerHTML = renderMarkdown(thinkPreview(ai.thinkRaw), true);
+  } else {
+    ai.thinkBody.classList.remove('think-rendered');
+    ai.thinkBody.textContent = thinkPreview(ai.thinkRaw);
+  }
 }
 
 function appendThink(ai, text) {
   if (!ai || !text) return;
   ai.thinkRaw += text;
   ai.think.hidden = false;
-  ai.thinkBody.textContent = ai.thinkRaw;
   ai.think.querySelector('summary').textContent = '推理过程 · 思考中';
+  if (ai.think.open) {
+    if (ai.thinkTimer) clearTimeout(ai.thinkTimer);
+    ai.thinkTimer = setTimeout(() => {
+      ai.thinkTimer = null;
+      if (ai.think.open) renderThinking(ai, false);
+    }, 180);
+  }
   updateStatus(ai, '深度思考中…');
 }
 
 function renderThinkFinal(ai) {
   if (!ai || !ai.thinkRaw) return;
+  if (ai.thinkTimer) {
+    clearTimeout(ai.thinkTimer);
+    ai.thinkTimer = null;
+  }
   ai.think.hidden = false;
   ai.think.querySelector('summary').textContent = '推理过程';
-  ai.thinkBody.innerHTML = renderMarkdown(ai.thinkRaw, true);
+  if (ai.think.open) renderThinking(ai, true);
 }
 
 function stripStreamingMeta(text) {
@@ -1456,8 +1839,7 @@ function renderStreamingMarkdown(rawText) {
     html += '<pre class="stream-pending stream-pending-code"><code>'
       + escapeHtml(body) + '</code></pre>';
   } else {
-    html += '<div class="stream-pending stream-pending-math">'
-      + escapeHtml(tail) + '</div>';
+    html += '<div class="stream-pending stream-pending-math">公式生成中…</div>';
   }
   return html;
 }
@@ -1478,7 +1860,11 @@ function tickSmooth(ai) {
   ai.smoothText += ai.smoothBuf.slice(0, size);
   ai.smoothBuf = ai.smoothBuf.slice(size);
   ai.answer.classList.add('markdown');
-  ai.answer.innerHTML = renderStreamingMarkdown(ai.smoothText);
+  try {
+    ai.answer.innerHTML = renderStreamingMarkdown(ai.smoothText);
+  } catch (_) {
+    ai.answer.innerHTML = '<div class="stream-pending">正在生成…</div>';
+  }
   if (state.autoScroll) scrollToBottom(false);
   else { state.hasNewContent = true; syncScrollButton(); }
 }
@@ -1504,23 +1890,53 @@ function finishAi(ai, fullText, stopped, metrics) {
   }
   const full = (typeof fullText === 'string' && fullText) ? fullText : (ai.smoothText + ai.smoothBuf);
   const parsed = parseAnswerMeta(full);
-  const text = parsed.text;
+  const text = repairMathDelimiters(parsed.text);
   ai.smoothText = text;
   ai.smoothBuf = '';
   ai.raw = text;
   ai.title = extractAnswerTitle(text);
   renderAnswerMeta(ai, parsed.meta);
 
-  if (text) {
-    ai.answer.classList.add('markdown');
+  if (!text) {
+    renderThinkFinal(ai);
+    const box = document.createElement('div');
+    box.className = 'error-box';
+    const msg = document.createElement('span');
+    msg.textContent = stopped ? '已停止生成。' : '模型只返回了推理过程，没有返回正文，请重新生成。';
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'error-retry';
+    retry.textContent = '重新生成';
+    retry.addEventListener('click', () => regenerateAnswer(ai));
+    box.appendChild(msg);
+    box.appendChild(retry);
+    ai.answer.innerHTML = '';
+    ai.answer.appendChild(box);
+    updateStatus(ai, stopped ? '已停止' : '未返回正文', true);
+    ai.actions.hidden = true;
+    if (ai.teachingActions) ai.teachingActions.hidden = true;
+    ai.reading.hidden = true;
+    ai.tocBtn.hidden = true;
+    hideTocRail();
+    state.lastAnswer = '';
+    syncMessageUserIds();
+    if (state.autoScroll) scrollToBottom(false);
+    else { state.hasNewContent = true; syncScrollButton(); }
+    return;
+  }
+  ai.answer.classList.add('markdown');
+  try {
     ai.answer.innerHTML = renderMarkdown(text, true);
-  } else {
-    ai.answer.innerHTML = '<div class="error-box">' + (stopped ? '已停止生成。' : '模型没有返回正文，请重试或换一个模型。') + '</div>';
+  } catch (_) {
+    ai.answer.innerHTML = '<div class="error-box"><span>回答渲染失败，请重新生成。</span></div>';
   }
   updateStatus(ai, stopped ? '已停止' : '回答完成');
+  try { decorateAnswer(ai); } catch (_) { /* 装饰失败不影响正文 */ }
+  try { refreshAnswerStructure(ai); } catch (_) { /* 目录失败不影响正文 */ }
   renderThinkFinal(ai);
   if (metrics) renderMetrics(ai, metrics);
   ai.actions.hidden = false;
+  if (ai.teachingActions) ai.teachingActions.hidden = !text;
   state.lastAnswer = text;
   syncMessageUserIds();
   if (state.autoScroll) {
@@ -1554,6 +1970,10 @@ function failAi(ai, message) {
   ai.answer.appendChild(box);
   updateStatus(ai, '调用失败', true);
   ai.actions.hidden = true;
+  if (ai.teachingActions) ai.teachingActions.hidden = true;
+  ai.reading.hidden = true;
+  ai.tocBtn.hidden = true;
+  hideTocRail();
   state.lastAnswer = '';
   syncMessageUserIds();
   if (state.autoScroll) {
@@ -1713,11 +2133,15 @@ function syncScrollButton() {
 function hideWelcome() {
   const el = $('#welcome');
   if (el) el.hidden = true;
+  const scroll = $('#chat-scroll');
+  if (scroll) scroll.classList.remove('welcome-mode');
 }
 
 function showWelcome() {
   const el = $('#welcome');
   if (el) el.hidden = false;
+  const scroll = $('#chat-scroll');
+  if (scroll) scroll.classList.add('welcome-mode');
 }
 
 function clearChat() {
@@ -1730,6 +2154,7 @@ function clearChat() {
   showWelcome();
   state.currentAi = null;
   state.lastAnswer = '';
+  hideTocRail();
   state.autoScroll = true;
   state.hasNewContent = false;
 }
@@ -1773,27 +2198,33 @@ function renderSessions(sessions) {
   const wrap = $('#history-list');
   if (!wrap) return;
 
-  const ids = new Set(state.historySessions.map(s => String(s.sessionId)));
+  const query = String(state.historyQuery || '').trim().toLowerCase();
+  const visible = query
+    ? state.historySessions.filter(s => String(s.title || '新对话').toLowerCase().includes(query))
+    : state.historySessions.slice();
+  state.visibleSessions = visible;
+
+  const ids = new Set(visible.map(s => String(s.sessionId)));
   Array.from(state.selectedSessions).forEach(id => {
     if (!ids.has(id)) state.selectedSessions.delete(id);
   });
-  if (state.historyEdit && !state.historySessions.length) {
+  if (state.historyEdit && !visible.length) {
     state.historyEdit = false;
     state.selectedSessions.clear();
   }
 
   wrap.innerHTML = '';
-  if (!state.historySessions.length) {
+  if (!visible.length) {
     const empty = document.createElement('div');
     empty.className = 'history-empty';
-    empty.textContent = '还没有历史对话。发送第一条消息后会自动保存。';
+    empty.textContent = query ? '没有匹配的对话。' : '还没有历史对话。发送第一条消息后会自动保存。';
     wrap.appendChild(empty);
     updateHistoryEditUI();
     return;
   }
 
   let currentGroup = '';
-  state.historySessions.forEach(s => {
+  visible.forEach(s => {
     const date = new Date(s.updateTime || s.createTime || '');
     const group = groupLabel(date);
     if (group !== currentGroup) {
@@ -1855,12 +2286,12 @@ function updateHistoryEditUI() {
   const edit = $('#history-edit');
   if (edit) {
     edit.textContent = state.historyEdit ? '完成' : '编辑';
-    edit.disabled = !state.historySessions.length;
+    edit.disabled = !state.visibleSessions.length;
   }
   const bar = $('#history-edit-bar');
   if (bar) bar.hidden = !state.historyEdit;
 
-  const total = state.historySessions.length;
+  const total = state.visibleSessions.length;
   const selected = state.selectedSessions.size;
   const all = $('#history-select-all');
   if (all) {
@@ -1876,7 +2307,7 @@ function updateHistoryEditUI() {
 }
 
 function setHistoryEdit(on) {
-  if (on && !state.historySessions.length) {
+  if (on && !state.visibleSessions.length) {
     toast('还没有可编辑的对话');
     return;
   }
@@ -1903,7 +2334,7 @@ function toggleSessionSelection(id) {
 
 function selectAllSessions(checked) {
   state.selectedSessions = checked
-    ? new Set(state.historySessions.map(s => String(s.sessionId)))
+    ? new Set(state.visibleSessions.map(s => String(s.sessionId)))
     : new Set();
   renderSessions(state.historySessions);
 }
@@ -2001,6 +2432,7 @@ async function deleteSession(id) {
 }
 
 function newChat() {
+  if (state.startMode) setStartMode('', false);
   if (state.pendingEdit) cancelEdit(false);
   if (state.historyEdit) setHistoryEdit(false);
   if (state.abort) {
@@ -2174,6 +2606,104 @@ function loadAnswerFontSize() {
   applyAnswerFontSize(saved == null ? DEFAULT_ANSWER_FONT_SIZE : saved);
 }
 
+function updateStartModeUI() {
+  const modes = {
+    solve: { label: '讲题模式', placeholder: '把题目打出来，或上传题目图片 / PDF…' },
+    lesson: { label: '备课模式', placeholder: '输入课题、教材版本和课时，例如：人教版八年级物理《浮力》…' },
+    quiz: { label: '出题模式', placeholder: '输入知识点、题型和数量，例如：二次函数，选择+填空，各 5 题…' }
+  };
+  const mode = state.startMode || '';
+  const input = $('#input-box');
+  if (input) {
+    input.placeholder = modes[mode] ? modes[mode].placeholder : '输入问题，或上传题目图片 / 文件…';
+  }
+  document.querySelectorAll('.home-action').forEach(btn => {
+    btn.classList.toggle('active', mode
+      ? btn.dataset.start === mode
+      : btn.dataset.start === 'free');
+  });
+  const banner = $('#starter-banner');
+  if (banner) {
+    banner.hidden = !mode;
+    if (mode) $('#starter-label').textContent = modes[mode].label;
+  }
+}
+
+function setStartMode(mode, focus) {
+  const next = mode === 'free' ? '' : (mode || '');
+  state.startMode = next === state.startMode ? '' : next;
+  updateStartModeUI();
+  if (focus) {
+    const input = $('#input-box');
+    input.focus();
+    if (state.startMode) {
+      state.autoScroll = true;
+      scrollToBottom(true);
+    }
+  }
+}
+
+function loadTeachingContext() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LS.teachingContext) || 'null');
+    if (saved && typeof saved === 'object') {
+      state.teaching = {
+        stage: saved.stage || 'auto',
+        subject: saved.subject || 'auto',
+        role: saved.role || 'auto',
+        textbook: saved.textbook || '通用'
+      };
+    }
+  } catch (_) { /* 使用默认上下文 */ }
+  updateTeachingUI();
+}
+
+function updateTeachingUI() {
+  const map = {
+    'ctx-stage': state.teaching.stage,
+    'ctx-subject': state.teaching.subject,
+    'ctx-role': state.teaching.role,
+    'ctx-textbook': state.teaching.textbook
+  };
+  Object.entries(map).forEach(([id, value]) => {
+    const el = document.getElementById(id);
+    if (el) el.value = value;
+  });
+}
+
+function persistTeachingContext() {
+  try {
+    localStorage.setItem(LS.teachingContext, JSON.stringify(state.teaching));
+  } catch (_) { /* 忽略 */ }
+}
+
+function stageCode(value) {
+  return { primary: 'primary', junior: 'junior', senior: 'senior' }[value] || '';
+}
+
+function teachingPayload() {
+  return {
+    stage: stageCode(state.teaching.stage),
+    subject: state.teaching.subject === 'auto' ? '' : state.teaching.subject,
+    role: state.teaching.role === 'auto' ? '' : state.teaching.role,
+    textbook: state.teaching.textbook === '通用' ? '' : state.teaching.textbook
+  };
+}
+
+function onTeachingChange() {
+  const stage = document.getElementById('ctx-stage');
+  const subject = document.getElementById('ctx-subject');
+  const role = document.getElementById('ctx-role');
+  const textbook = document.getElementById('ctx-textbook');
+  state.teaching = {
+    stage: stage ? stage.value : 'auto',
+    subject: subject ? subject.value : 'auto',
+    role: role ? role.value : 'auto',
+    textbook: textbook ? textbook.value : '通用'
+  };
+  persistTeachingContext();
+}
+
 function loadFeaturePrefs() {
   try {
     state.deepThinking = localStorage.getItem(LS.deepThinking) === '1';
@@ -2229,6 +2759,15 @@ function updatePersonalizeUI() {
   if (stateEl) stateEl.textContent = state.personalPrompt ? '已启用' : '未设置';
   const count = $('#personal-count');
   if (count) count.textContent = state.personalPrompt.length + ' / 2000';
+}
+
+function openAbout() {
+  closeDrawer();
+  $('#about-overlay').hidden = false;
+}
+
+function closeAbout() {
+  $('#about-overlay').hidden = true;
 }
 
 function openPersonalize() {
@@ -2686,8 +3225,10 @@ function closeAllOverlays() {
   if (!$('#model-overlay').hidden) closeModelSheet();
   if (!$('#saved-overlay').hidden) closeFavorite();
   if (!$('#personalize-overlay').hidden) closePersonalize();
+  if (!$('#about-overlay').hidden) closeAbout();
   if (!$('#attach-overlay').hidden) closeAttachMenu();
   if (!$('#export-overlay').hidden) closeExportSheet();
+  if (!$('#toc-overlay').hidden) closeToc();
   closeDrawer();
 }
 
@@ -2736,6 +3277,16 @@ function wireEvents() {
     openSession(id, false);
   });
 
+  document.querySelectorAll('.home-action').forEach(btn => {
+    btn.addEventListener('click', () => setStartMode(btn.dataset.start, true));
+  });
+  $('#starter-cancel').addEventListener('click', () => setStartMode('', true));
+
+  $('#history-search').addEventListener('input', event => {
+    state.historyQuery = event.target.value;
+    state.selectedSessions.clear();
+    renderSessions(state.historySessions);
+  });
   $('#history-edit').addEventListener('click', () => setHistoryEdit(!state.historyEdit));
   $('#history-select-all').addEventListener('change', event => selectAllSessions(event.target.checked));
   $('#history-delete-selected').addEventListener('click', deleteSelectedSessions);
@@ -2835,6 +3386,11 @@ function wireEvents() {
     toast('已删除收藏');
   });
 
+  $('#toc-close').addEventListener('click', closeToc);
+  $('#toc-overlay').addEventListener('click', event => {
+    if (event.target === $('#toc-overlay')) closeToc();
+  });
+
   $('#export-close').addEventListener('click', closeExportSheet);
   $('#export-overlay').addEventListener('click', event => {
     if (event.target === $('#export-overlay')) closeExportSheet();
@@ -2856,9 +3412,23 @@ function wireEvents() {
   });
 
   $('#edit-cancel').addEventListener('click', () => cancelEdit(true));
+  ['ctx-stage', 'ctx-subject', 'ctx-role', 'ctx-textbook'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', onTeachingChange);
+  });
   $('#think-toggle').addEventListener('click', () => setDeepThinking(!state.deepThinking));
   $('#web-toggle').addEventListener('click', () => setWebSearch(!state.webSearch));
 
+  $('#about-btn').addEventListener('click', openAbout);
+  $('#about-close').addEventListener('click', closeAbout);
+  $('#about-overlay').addEventListener('click', event => {
+    if (event.target === $('#about-overlay')) closeAbout();
+  });
+  $('#about-copy-email').addEventListener('click', () => {
+    copyText('suxiangyu_dev@foxmail.com')
+      .then(() => toast('邮箱已复制'))
+      .catch(() => toast('复制失败'));
+  });
   $('#personalize-btn').addEventListener('click', openPersonalize);
   $('#personalize-close').addEventListener('click', closePersonalize);
   $('#personalize-overlay').addEventListener('click', event => {
@@ -2893,11 +3463,199 @@ function wireEvents() {
   }
 }
 
+function initStarfield() {
+  const canvas = $('#starfield');
+  const scroller = $('#chat-scroll');
+  if (!canvas || !scroller || !canvas.getContext) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const reduceMotion = window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let width = 0;
+  let height = 0;
+  let stars = [];
+  let raf = 0;
+  let running = false;
+  let lastPaint = 0;
+  let pointerX = 0;
+  let pointerY = 0;
+  let shooting = null;
+  let nextShoot = 0;
+
+  function buildStars() {
+    const count = width < 640 ? 44 : (width < 1100 ? 54 : 66);
+    stars = Array.from({ length: count }, () => ({
+      x: Math.random(),
+      y: Math.random(),
+      z: 0.25 + Math.random() * 0.75,
+      r: 0.55 + Math.random() * 1.15,
+      phase: Math.random() * Math.PI * 2,
+      drift: 0.25 + Math.random() * 0.8
+    }));
+  }
+
+  function resize() {
+    const rect = scroller.getBoundingClientRect();
+    width = Math.max(1, rect.width);
+    height = Math.max(1, rect.height);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    buildStars();
+    if (!running) draw(performance.now() / 1000, false);
+  }
+
+  function draw(now, animate) {
+    ctx.clearRect(0, 0, width, height);
+    const points = [];
+    for (let i = 0; i < stars.length; i++) {
+      const star = stars[i];
+      const wobble = animate ? Math.sin(now * 0.07 + star.phase) : 0;
+      const breathe = animate ? Math.cos(now * 0.55 + star.phase) : 0;
+      const x = star.x * width + wobble * star.drift * 9 + pointerX * star.z * 11;
+      const y = star.y * height + Math.cos(now * 0.05 + star.phase) * star.drift * 6 + pointerY * star.z * 7;
+      points.push({ x, y, star });
+      const alpha = (0.16 + star.z * 0.28 + breathe * 0.055).toFixed(3);
+      ctx.beginPath();
+      ctx.arc(x, y, star.r * (0.85 + star.z * 0.35), 0, Math.PI * 2);
+      ctx.fillStyle = star.z > 0.62
+        ? 'rgba(47, 107, 255, ' + alpha + ')'
+        : 'rgba(14, 116, 144, ' + alpha + ')';
+      ctx.fill();
+    }
+
+    if (width > 300) {
+      const maxDist = width < 640 ? 62 : (width < 1000 ? 86 : 100);
+      ctx.lineWidth = 0.65;
+      for (let i = 0; i < points.length; i++) {
+        for (let j = i + 1; j < points.length; j++) {
+          const dx = points[i].x - points[j].x;
+          const dy = points[i].y - points[j].y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < maxDist) {
+            const alpha = (1 - dist / maxDist) * 0.085;
+            ctx.strokeStyle = 'rgba(47, 107, 255, ' + alpha.toFixed(3) + ')';
+            ctx.beginPath();
+            ctx.moveTo(points[i].x, points[i].y);
+            ctx.lineTo(points[j].x, points[j].y);
+            ctx.stroke();
+          }
+        }
+      }
+    }
+
+    if (!animate) return;
+    if (!shooting && now > nextShoot) {
+      shooting = {
+        x: width * (0.22 + Math.random() * 0.58),
+        y: height * (0.04 + Math.random() * 0.28),
+        vx: 110 + Math.random() * 80,
+        vy: 42 + Math.random() * 35,
+        life: 1
+      };
+      nextShoot = now + 7 + Math.random() * 8;
+    }
+    if (shooting) {
+      shooting.x += shooting.vx * 0.016;
+      shooting.y += shooting.vy * 0.016;
+      shooting.life -= 0.022;
+      if (shooting.life <= 0) {
+        shooting = null;
+      } else {
+        const len = 52 + shooting.life * 28;
+        const grad = ctx.createLinearGradient(shooting.x, shooting.y,
+          shooting.x - len, shooting.y - len * 0.38);
+        grad.addColorStop(0, 'rgba(47, 107, 255, ' + (0.5 * shooting.life).toFixed(3) + ')');
+        grad.addColorStop(1, 'rgba(47, 107, 255, 0)');
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        ctx.moveTo(shooting.x, shooting.y);
+        ctx.lineTo(shooting.x - len, shooting.y - len * 0.38);
+        ctx.stroke();
+      }
+    }
+  }
+
+  function loop(timestamp) {
+    if (!running) return;
+    raf = requestAnimationFrame(loop);
+    if (timestamp - lastPaint < 30) return;
+    lastPaint = timestamp;
+    draw(timestamp / 1000, true);
+  }
+
+  function start() {
+    if (reduceMotion || running || document.hidden) return;
+    if (!scroller.classList.contains('welcome-mode')) return;
+    running = true;
+    lastPaint = 0;
+    raf = requestAnimationFrame(loop);
+  }
+
+  function stop() {
+    running = false;
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+  }
+
+  function sync() {
+    if (document.hidden || !scroller.classList.contains('welcome-mode')) stop();
+    else start();
+  }
+
+  scroller.addEventListener('pointermove', event => {
+    if (!window.matchMedia || !window.matchMedia('(hover: hover)').matches) return;
+    const rect = scroller.getBoundingClientRect();
+    pointerX = Math.max(-1, Math.min(1, ((event.clientX - rect.left) / rect.width) * 2 - 1));
+    pointerY = Math.max(-1, Math.min(1, ((event.clientY - rect.top) / rect.height) * 2 - 1));
+  }, { passive: true });
+
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(resize).observe(scroller);
+  } else {
+    window.addEventListener('resize', resize);
+  }
+  document.addEventListener('visibilitychange', sync);
+  if ('MutationObserver' in window) {
+    new MutationObserver(sync).observe(scroller, { attributes: true, attributeFilter: ['class'] });
+  }
+  nextShoot = 5 + Math.random() * 4;
+  resize();
+  if (reduceMotion) draw(performance.now() / 1000, false);
+  else start();
+}
+
 async function init() {
   setupMarked();
   wireEvents();
   syncViewport();
-  initConfig();
+  function initWelcomeAtmosphere() {
+  const welcome = $('#welcome');
+  if (!welcome || !window.matchMedia || !window.matchMedia('(hover: hover)').matches) return;
+  let pending = 0;
+  welcome.addEventListener('pointermove', event => {
+    if (pending) return;
+    pending = requestAnimationFrame(() => {
+      pending = 0;
+      const rect = welcome.getBoundingClientRect();
+      const x = rect.width ? ((event.clientX - rect.left) / rect.width) * 100 : 50;
+      const y = rect.height ? ((event.clientY - rect.top) / rect.height) * 100 : 35;
+      welcome.style.setProperty('--spot-x', Math.max(0, Math.min(100, x)).toFixed(2) + '%');
+      welcome.style.setProperty('--spot-y', Math.max(0, Math.min(100, y)).toFixed(2) + '%');
+    });
+  }, { passive: true });
+}
+
+initConfig();
+  initWelcomeAtmosphere();
+  initStarfield();
+  loadTeachingContext();
+  updateStartModeUI();
   loadFeaturePrefs();
   loadAnswerFontSize();
   loadFavorites();

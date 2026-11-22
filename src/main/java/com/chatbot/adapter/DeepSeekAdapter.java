@@ -43,7 +43,7 @@ public class DeepSeekAdapter extends BaseModelAdapter {
             ObjectNode thinking = root.putObject("thinking");
             thinking.put("type", req.isDeepThinking() ? "enabled" : "disabled");
             if (req.isDeepThinking()) {
-                root.put("reasoning_effort", "max");
+                root.put("reasoning_effort", "high");
             }
         }
         if (includeUsage) {

@@ -17,7 +17,7 @@ Java 25 / Maven 3.9+：
 
 ```bash
 mvn -DskipTests package
-java -jar target/via-scholar-4.0.0.jar
+java -jar target/via-scholar-4.1.0.jar
 
 # 或
 mvn spring-boot:run
@@ -31,9 +31,10 @@ mvn spring-boot:run
 POST /api/attachments (multipart, 最多 50 个)
   → AttachmentService 落盘 data/uploads，返回附件 ID
 
-POST /api/chat { messages, attachments:[id], deepThinking, webSearch }
+POST /api/chat { messages, attachments:[id], deepThinking, webSearch,
+                 stage, subject, role, textbook }
   → ChatController
-  → ChatService（读取历史、拼接 SYSTEM_PROMPT、计时、落库）
+  → ChatService（读取历史、注入教学上下文、拼接 SYSTEM_PROMPT、计时、落库）
       附件：PDF/文本 → 拼入用户文本；图片 → data URL content parts
       webSearch=true → DeepSeekApiClient.search() 调 /v1/tools/search
                       → 搜索摘要作为外部资料追加进系统提示词
@@ -41,7 +42,7 @@ POST /api/chat { messages, attachments:[id], deepThinking, webSearch }
   写入用户消息（历史接口返回 msgId）
   → DeepSeekAdapter.streamChat
       stream_options.include_usage = true
-      thinking: disabled（默认）或 enabled + reasoning_effort: max
+      thinking: disabled（默认）或 enabled + reasoning_effort: high
   → SSE: reasoning / chunk / finish / error
 ```
 
@@ -80,8 +81,19 @@ POST /api/chat { messages, attachments:[id], deepThinking, webSearch }
 - 历史会话：H2 持久化；侧边栏“编辑”进入多选，支持全选、批量删除（`POST /api/history/sessions/delete`）
 - 收藏：回答结束后“收藏”写入 `localStorage` 的 `viaScholarFavoritesV1`，侧边栏“我的收藏”可查看、复制、删除
 - 个性化：`localStorage` 的 `viaScholarPersonalPromptV1`，每次对话作为 `customInstructions` 发送，服务端追加到系统提示词末尾并限制 2000 字
+- 教学上下文：`localStorage` 的 `viaScholarTeachingContextV1`，保存学段/学科/身份/教材；请求字段 `stage`、`subject`、`role`、`textbook`，服务端拼入系统提示词
 - 阅读字号：`localStorage` 的 `viaScholarAnswerFontSizeV1`，范围 12–22，默认 14；通过 `--answer-size` 控制 `.answer`、收藏正文和预览，标题/代码/表格用 em 跟随
-- 深度思考：`localStorage` 的 `viaScholarDeepThinkingV1`，默认关闭；关闭时请求 `thinking:{type:"disabled"}`，开启时 `thinking:{type:"enabled"}` + `reasoning_effort:"max"`
+- 讲义结构：回答标题使用 `##`，正文章节使用 `###`；`refreshAnswerStructure()` 计算阅读时长和目录，桌面端显示 `#toc-rail`，移动端 `#toc-overlay`
+- 公式兜底：`repairMathDelimiters()` 在渲染前补齐未闭合的 `$`/`$$`，`repairLatexContent()` 补齐常见括号和 `\left/\right`；`renderPreparedMath()` 逐个公式调用 `katex.renderToString`，单个失败不会中断整篇。
+- 教学组件：`decorateAnswer()` 只把代码块包成 `teaching-block` 并加复制按钮，公式/化学式保持普通块级排版；表格包 `table-wrap`，宽表格用 `width:max-content` + 横向滚动并在溢出时插入提示；引用链接汇总到 `answer-sources`；不生成易错点 callout，blockquote 使用普通文本样式
+- 深度思考兜底：`finishOrFallback()` 发现 reasoning 非空、content 为空时，自动把 `deepThinking` 改为 false 再请求一次，避免 high/max 推理耗尽 8192 输出预算后显示空回答
+- 教学动作：每条回答可发起“板书提纲 / 同类题 / 分层作业”，会作为新的用户请求发送，不修改原回答
+- 历史搜索：`state.historyQuery` 过滤侧边栏会话；多选只作用于当前可见结果
+- 首页快捷入口：讲一道题 / 备一节课 / 出一组题 / 自由提问；`state.startMode` 控制激活态和输入框 placeholder，`#starter-banner` 显示当前模式并可取消，不自动填写题目
+- 首页滚动：`#chat-scroll.welcome-mode` 设置 `overflow-y:hidden`；移动端隐藏长介绍卡，改为三张紧凑卡，内容垂直居中，避免首页上下滑动
+- 星空背景：`#starfield` 为首页 canvas，绘制粒子、星座连线、视差和流星；仅 `welcome-mode` 运行，离开首页停止，DPR 上限 2，`prefers-reduced-motion` 下只静态绘制
+- 身份结构：提示词按“学生/教师”要求不同章节；身份来自顶部教学上下文条，通过 `role` 字段传入
+- 深度思考：`localStorage` 的 `viaScholarDeepThinkingV1`，默认关闭；关闭时请求 `thinking:{type:"disabled"}`，开启时 `thinking:{type:"enabled"}` + `reasoning_effort:"high"`；输出预算按 8192 处理
 - 联网搜索：`localStorage` 的 `viaScholarWebSearchV1`，默认开启；后端调用 DeepSeek `/v1/tools/search`，结果作为外部资料注入系统提示词，搜索失败不阻断对话
 - 重新编辑/重新生成：用户消息带 `msgId`；先调用 `/api/history/messages/truncate` 截断该消息及后续，再重新发送或生成；错误框提供重试按钮
 - 附件：`camera-input`（capture）、`album-input`（image/*）、`file-input`（仅 PDF/文本）三个入口；change 事件先 `Array.from(files)` 快照，再清空 input，避免 FileList 被清空
@@ -97,7 +109,8 @@ POST /api/chat { messages, attachments:[id], deepThinking, webSearch }
 - 代码块按语言高亮，未标注语言时用 highlight.js 自动识别；代码块内的 `**`、`$` 不会被误处理。
 - 中文标点后的 `**加粗**` 由前端预处理保证渲染；答案正文与标题左对齐。
 - 回答首行支持 `<!--via-meta {"subject":"...","type":"...","grade":"..."}-->`，解析后显示类型标签，元数据不进入正文。
-- 流式渲染用未闭合分隔符扫描：公式或代码未闭合时先按纯文本显示，闭合后再走正常渲染。
+- 流式渲染用未闭合分隔符扫描：公式未闭合时显示“公式生成中”占位，代码未闭合时按纯文本显示，闭合后再走正常渲染。
+- 推理区：流式阶段 `.think-body` 使用 pre-wrap；最终 Markdown 加 `.think-rendered` 改为 normal，避免 HTML 换行被当成大量空行。`appendThink()` 只在 details 展开时懒渲染，`MAX_THINK_RENDER=9000` 截断展示，避免长推理阻塞页面。
 
 ## 费用
 

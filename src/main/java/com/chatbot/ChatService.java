@@ -107,6 +107,7 @@ public class ChatService {
             hist = getSession(memSessionId);
         }
 
+        String teachingContext = buildTeachingContext(req);
         String searchContext = "";
         String searchQuery = lastUserContent(req);
         if (req.isWebSearch() && shouldSearch(searchQuery)) {
@@ -123,7 +124,7 @@ public class ChatService {
         if (!userContent.isBlank()) {
             hist.add(new ChatMessage(ChatMessage.Role.USER, userContent));
         }
-        req.setMessages(buildMessages(hist, payload, req.getCustomInstructions(), searchContext));
+        req.setMessages(buildMessages(hist, payload, req.getCustomInstructions(), searchContext, teachingContext));
 
         BaseModelAdapter adapter = adapterFactory.getAdapter(
                 req.getProvider() != null ? req.getProvider() : "deepseek");
@@ -147,11 +148,68 @@ public class ChatService {
                     onChunk(em, chunk, buf, thinkBuf);
                 },
                 err -> onError(em, err),
-                () -> onComplete(em, hist, buf, thinkBuf, finalDbId, usageRef.get(),
-                        startNanos, firstTokenNanos.get(), req.getModelName()),
+                () -> finishOrFallback(em, req, adapter, hist, buf, thinkBuf, finalDbId,
+                        startNanos, firstTokenNanos, usageRef),
                 usageRef::set);
 
         return em;
+    }
+
+    /**
+     * 深度思考开启到 max 时，推理可能耗尽整个输出预算，上游只返回 reasoning_content。
+     * 此时自动用标准模式补全正文，避免用户看到“空回答”。普通空返回则直接报错。
+     */
+    private void finishOrFallback(SseEmitter em, UnifiedChatRequest req,
+                                  BaseModelAdapter adapter, List<ChatMessage> hist,
+                                  StringBuilder buf, StringBuilder thinkBuf, Long dbSessionId,
+                                  long startNanos, AtomicLong firstTokenNanos,
+                                  AtomicReference<UsageInfo> firstUsageRef) {
+        if (buf.length() > 0) {
+            onComplete(em, hist, buf, thinkBuf, dbSessionId, firstUsageRef.get(),
+                    startNanos, firstTokenNanos.get(), req.getModelName());
+            return;
+        }
+        if (thinkBuf.length() == 0) {
+            onError(em, new RuntimeException("模型没有返回正文，请重新生成。"));
+            return;
+        }
+
+        log.warn("深度思考未留下正文，自动切换标准模式补全；model={}", req.getModelName());
+        req.setDeepThinking(false);
+        UsageInfo firstUsage = firstUsageRef.get();
+        AtomicReference<UsageInfo> fallbackUsage = new AtomicReference<>();
+        try {
+            adapter.streamChat(req,
+                    chunk -> {
+                        firstTokenNanos.compareAndSet(0, System.nanoTime());
+                        onChunk(em, chunk, buf, thinkBuf);
+                    },
+                    err -> onError(em, err),
+                    () -> {
+                        if (buf.length() == 0) {
+                            onError(em, new RuntimeException("深度思考未返回正文，标准模式补全也失败，请重试。"));
+                            return;
+                        }
+                        UsageInfo merged = mergeUsage(firstUsage, fallbackUsage.get());
+                        onComplete(em, hist, buf, thinkBuf, dbSessionId, merged,
+                                startNanos, firstTokenNanos.get(), req.getModelName());
+                    },
+                    fallbackUsage::set);
+        } catch (Exception e) {
+            onError(em, e);
+        }
+    }
+
+    private UsageInfo mergeUsage(UsageInfo first, UsageInfo second) {
+        if (first == null) return second;
+        if (second == null) return first;
+        UsageInfo merged = new UsageInfo();
+        merged.setPromptTokens(first.getPromptTokens() + second.getPromptTokens());
+        merged.setCompletionTokens(first.getCompletionTokens() + second.getCompletionTokens());
+        merged.setTotalTokens(first.getTotalTokens() + second.getTotalTokens());
+        merged.setCacheHitTokens(first.getCacheHitTokens() + second.getCacheHitTokens());
+        merged.setCacheMissTokens(first.getCacheMissTokens() + second.getCacheMissTokens());
+        return merged;
     }
 
     private void onChunk(SseEmitter em, UnifiedStreamChunk chunk,
@@ -239,7 +297,8 @@ public class ChatService {
     }
 
     /** 构建系统提示词（Pathfinder · K12 全学科教学智能体 + 用户个性化偏好） */
-    private String buildSystemPrompt(String customInstructions, String searchContext) {
+    private String buildSystemPrompt(String customInstructions, String searchContext,
+                                     String teachingContext) {
         StringBuilder prompt = new StringBuilder(SYSTEM_PROMPT);
         if (customInstructions != null && !customInstructions.isBlank()) {
             String custom = customInstructions.trim();
@@ -250,10 +309,41 @@ public class ChatService {
                     .append(custom)
                     .append("\n以上偏好只影响表达方式、深度、例子和结构；不得覆盖学科范围、准确性、安全性和 K12 边界。若与系统规则冲突，以系统规则为准。");
         }
+        if (teachingContext != null && !teachingContext.isBlank()) {
+            prompt.append("\n\n").append(teachingContext);
+        }
         if (searchContext != null && !searchContext.isBlank()) {
             prompt.append("\n\n").append(searchContext);
         }
         return prompt.toString();
+    }
+
+    /** 把界面选择的教学上下文写入提示词，未选择时保持自动判断。 */
+    private String buildTeachingContext(UnifiedChatRequest req) {
+        List<String> parts = new ArrayList<>();
+        String stage = switch (req.getStage() == null ? "" : req.getStage()) {
+            case "primary" -> "小学";
+            case "junior" -> "初中";
+            case "senior" -> "高中";
+            default -> "";
+        };
+        if (!stage.isBlank()) parts.add("学段：" + stage);
+        if (req.getSubject() != null && !req.getSubject().isBlank()) {
+            parts.add("学科：" + req.getSubject().trim());
+        }
+        if ("student".equals(req.getRole())) {
+            parts.add("身份：学生");
+        } else if ("teacher".equals(req.getRole())) {
+            parts.add("身份：教师");
+        }
+        if (req.getTextbook() != null && !req.getTextbook().isBlank()) {
+            parts.add("教材：" + req.getTextbook().trim());
+        }
+        if (parts.isEmpty()) {
+            return "";
+        }
+        return "【本次教学上下文】\n" + String.join("；", parts)
+                + "\n请按该上下文调整难度、术语、例子和讲解方式；未提供的维度按问题自动判断。";
     }
 
     /** 短追问和纯客套不触发联网搜索，避免每轮都增加延迟。 */
@@ -295,10 +385,11 @@ public class ChatService {
     private List<UnifiedChatRequest.Message> buildMessages(List<ChatMessage> hist,
                                                             AttachmentService.Payload payload,
                                                             String customInstructions,
-                                                            String searchContext) {
+                                                            String searchContext,
+                                                            String teachingContext) {
         List<UnifiedChatRequest.Message> msgs = new ArrayList<>();
         msgs.add(new UnifiedChatRequest.Message("system",
-                buildSystemPrompt(customInstructions, searchContext)));
+                buildSystemPrompt(customInstructions, searchContext, teachingContext)));
         for (int i = 0; i < hist.size(); i++) {
             ChatMessage m = hist.get(i);
             String role = m.getRole() == ChatMessage.Role.USER ? "user" : "assistant";
@@ -390,9 +481,9 @@ public class ChatService {
             - 先给结论或可直接使用的答案，再解释；开头不要“当然可以”“这是一个好问题”等客套话。
             - 每次回答的第一行输出结构化元数据（HTML 注释，前端会隐藏）：
             <!--via-meta {"subject":"数学","type":"formula","grade":"高中"}-->
-            - 第二行用 Markdown 三级标题：### 概括标题。标题不超过 16 个汉字，具体概括本次回答，不写“回答”“解析”“解答”这类空泛词，不要原样重复问题。
+            - 第二行用 Markdown 二级标题：## 概括标题。标题不超过 16 个汉字，具体概括本次回答，不写“回答”“解析”“解答”这类空泛词，不要原样重复问题。
             - 元数据字段：subject 用学科全称；type 取 text / formula / chemistry / code / table / mixed；grade 取 小学 / 初中 / 高中 / 通用。
-            - 标题后空一行再写正文；段落之间空一行；小标题、列表、表格、代码块、公式前后空一行。
+            - 标题后空一行再写正文；正文用 ### 一、... 分节，每节先给结论或方法，再展开；段落之间空一行；小标题、列表、表格、代码块、公式前后空一行。
             - 长回答按“结论 → 步骤/要点 → 易错点/补充”分段；不要把所有内容挤成一大段。
             - 该短则短：简单问题给标题和一两句话即可；复杂问题再展开，不堆模板。
             - 语气严肃、克制、正式得体，但不严厉：不训斥、不嘲讽、不卖萌、不开玩笑，不使用 emoji、颜文字或网络流行语。
@@ -437,6 +528,13 @@ public class ChatService {
             - 作文/主观题：审题 → 立意/观点 → 结构/要点 → 素材或例文片段 → 修改建议。
             - 简单问题直接回答，不要套模板；复杂问题再展开。
 
+            【按身份组织章节】
+            - 教学上下文注明“身份：学生”时，正文优先用 ### 一、结论 / ### 二、分步讲解 / ### 三、易错点 分节；用户明确要求练习时再加练习节。
+            - 注明“身份：教师”时，正文优先用 ### 教学目标 / ### 重难点 / ### 课堂流程 / ### 例题与变式 / ### 板书设计 / ### 分层作业 分节。
+            - 未注明身份时，按问题判断，但复杂回答至少分出结论、讲解、易错点。
+            - 需要强调时用普通段落，以 **易错点：**、**考点：** 或 **结论：** 开头；不要使用引用块，也不要给提示额外加卡片或底色。
+            - 使用联网搜索结果时，在具体事实后用 Markdown 链接标注来源，并在正文末尾列出来源。
+
             【准确性】
             - 不编造课文、诗句、定理、公式、史实、实验数据或教材页码；不确定时明确说明，并给出核实方法。
             - 古诗文和名著引用尽量逐字准确；冷僻或只记得大意的篇目不要冒充原文。
@@ -463,6 +561,7 @@ public class ChatService {
             5. 禁止使用 \\[ \\] 或 \\( \\) 作为公式分隔符。
             6. 公式内部不换行，不插入零宽字符或全角空格。
             7. 求和 \\sum、积分 \\int、极限 \\lim 等写在块级公式内。
-            8. 除首行的 via-meta 注释外，正文不要输出 HTML 标签。
+            8. 每个 $ 和 $$ 必须成对闭合；公式过长时拆成多个独立的块级公式，不要写到一半就接中文说明。
+            9. 除首行的 via-meta 注释外，正文不要输出 HTML 标签。
             """;
 }

@@ -60,6 +60,12 @@ public class UnifiedChatRequest {
     private boolean deepThinking;
     /** 是否联网搜索，默认开启 */
     private boolean webSearch = true;
+    /** 教学上下文：学科 */
+    private String subject;
+    /** 教学上下文：学生 / 教师 */
+    private String role;
+    /** 教学上下文：教材版本 */
+    private String textbook;
 
     public String getProvider() { return provider; }
     public void setProvider(String v) { provider = v; }
@@ -93,6 +99,12 @@ public class UnifiedChatRequest {
     public void setDeepThinking(boolean v) { deepThinking = v; }
     public boolean isWebSearch() { return webSearch; }
     public void setWebSearch(boolean v) { webSearch = v; }
+    public String getSubject() { return subject; }
+    public void setSubject(String v) { subject = v; }
+    public String getRole() { return role; }
+    public void setRole(String v) { role = v; }
+    public String getTextbook() { return textbook; }
+    public void setTextbook(String v) { textbook = v; }
 
     /** @deprecated 使用 getStage() */
     @Deprecated

@@ -6,7 +6,7 @@
 
 - GitHub：https://github.com/suxiangyu138/via-scholar
 - Gitee：https://gitee.com/suxiangyu138/via-scholar
-- 当前版本：v4.0.0（阶段性开发）
+- 当前版本：v4.1.0（阶段性开发）
 - 技术栈：Java 25 · Spring Boot 3.5.15 · H2 · 原生 JS
 
 ## 功能
@@ -14,9 +14,10 @@
 ### 教学与对话
 
 - **K12 全学科**：覆盖小学、初中、高中语文、数学、英语、物理、化学、生物、历史、地理、道德与法治/思想政治、科学、信息科技、通用技术及素质课程，不因学科拒答
+- **教学上下文**：顶部可选择学段、学科、身份和教材版本，随请求注入提示词，回答按课堂调整
 - **学生 / 教师双场景**：学生模式分步讲懂、错题订正、同类练习；教师模式生成教学目标、课堂引入、例题变式、易错点和分层作业
 - **回答规范**：提示词要求每次回答带概括标题，语气严肃克制、不训斥、不反问、不使用 emoji
-- **深度思考**：默认关闭；开启后请求 DeepSeek `thinking: enabled` 和 `reasoning_effort: max`
+- **深度思考**：默认关闭；开启后请求 DeepSeek `thinking: enabled` 和 `reasoning_effort: high`；当前 DeepSeek Flash 的输出预算按 8192 处理，若推理仍耗尽预算，服务端自动用标准模式补全正文；推理区默认不渲染，展开时才渲染，且只显示前 9000 字
 - **联网搜索**：默认开启，调用 DeepSeek Search；搜索结果注入系统提示词并附来源链接，搜索失败不阻断对话
 - **流式回答**：SSE 增量推送，推理过程与正文分层展示
 
@@ -24,7 +25,7 @@
 
 - **稳定滚动**：用户上翻阅读时停止自动跟随，生成继续；新内容有提示，回到底部恢复跟随
 - **重新编辑 / 重新生成**：问题可修改后重发，回答可重新生成；网络异常时错误框内可直接重试
-- **对话管理**：侧边栏进入编辑模式后可多选、全选、批量删除；支持单条删除和重命名
+- **对话管理**：侧边栏可搜索历史，进入编辑模式后可多选、全选、批量删除；支持单条删除和重命名
 - **我的收藏**：回答下方一键收藏，侧边栏查看、复制、删除；收藏保存在浏览器
 - **回答导出**：每条回答可导出 TXT、原生 DOCX 或 PDF；TXT/Word 保留公式源码，PDF 保留公式、代码、表格视觉排版；文件名为回答标题＋`YYYYMMDD_HHmmss_SSS`
 - **个性化设置**：个性提示词、回答字号 12–22 px（默认 14 px），保存在浏览器
@@ -34,9 +35,14 @@
 
 - **对话历史**：H2 持久化，按 `sid` 归属隔离；消息带 `msgId`，支持从指定消息截断
 - **附件**：图片、PDF、文本文件；单条最多 50 个
-- **全学科渲染**：Markdown、KaTeX 数学/物理公式、mhchem 化学式与方程式、highlight.js 代码高亮、Markdown 表格
-- **流式闭合缓冲**：未闭合的公式或代码围栏先按纯文本显示，闭合后再渲染
+- **全学科渲染**：Markdown、KaTeX 数学/物理公式、mhchem 化学式与方程式、highlight.js 代码高亮、Markdown 表格；公式逐个渲染，单个坏公式不影响整篇
+- **教学组件**：代码卡、宽表格横向滚动和参考来源；数学/物理/化学公式直接排版，不套卡片；易错点、考点、结论使用普通加粗段落，不使用引用块和底色卡片
+- **教学动作**：回答下方可一键生成板书提纲、同类题和分层作业
+- **教学起始页**：首页提供讲一道题、备一节课、出一组题、自由提问四个入口；选中后显示模式横幅，可取消，也可再次点击退出；首页固定高度不上下滚动，手机端使用紧凑标题和特性卡；玻璃卡片、星空粒子、星座连线、微光背景和轻微动效只做视觉层
+- **身份结构**：学生回答按结论/分步讲解/易错点组织，教师回答按教学目标/重难点/课堂流程/板书/分层作业组织
+- **流式闭合缓冲**：未闭合的公式先显示“公式生成中”占位，代码围栏按纯文本显示，闭合后再渲染
 - **结构化元数据**：回答首行支持 `<!--via-meta {...}-->`，前端解析学科/类型标签并隐藏注释
+- **本页目录**：桌面端右侧吸附，移动端底部弹层；按回答中的章节标题生成
 
 ## 快速开始
 
@@ -54,7 +60,7 @@ mvn spring-boot:run
 
 ```bash
 mvn -DskipTests package
-java -jar target/via-scholar-4.0.0.jar
+java -jar target/via-scholar-4.1.0.jar
 ```
 
 ### 配置
@@ -91,7 +97,9 @@ API Key 只保存在当前浏览器的 `localStorage`，每次请求由本机服
 - 回答首行支持 `<!--via-meta {"subject":"数学","type":"formula","grade":"高中"}-->`，前端解析后显示学科/类型标签，不把元数据当正文；模型未输出时自动回退
 - Markdown 由 marked 解析，公式由 KaTeX auto-render 渲染，化学式/方程式由 mhchem 渲染，代码块由 highlight.js 高亮，未标语言时自动识别
 - 中文标点后的 `**加粗**`、`\[...\]` 公式、代码块内的 `**` 和 `$` 均做了兼容处理
-- 流式输出中未闭合的 `$`、`$$`、`\(`、`\[` 或代码围栏先按纯文本占位，闭合后再渲染
+- 流式输出中未闭合的公式先显示“公式生成中”占位，代码围栏按纯文本占位，闭合后再渲染
+- 最终渲染会自动补齐漏掉的 `$`/`$$` 和常见 LaTeX 括号，避免把公式源码直接暴露在正文中
+- 最终渲染后只把代码块包成教学卡；公式和化学式直接排版，避免卡片边框和留白遮挡数字；宽表格使用 `max-content` 横向滚动并显示滑动提示；引用链接汇总为“参考链接”
 - 字号设置范围 12–22 px，默认 14 px；标题、代码、表格和公式随正文字号同步缩放
 
 ## 覆盖学科
@@ -107,7 +115,7 @@ API Key 只保存在当前浏览器的 `localStorage`，每次请求由本机服
 Browser (index.html + assets/app.js)
   → POST /api/chat
   → ChatController
-  → ChatService（历史 / 提示词 / 可选 DeepSeek Search / 指标）
+  → ChatService（历史 / 教学上下文 / 提示词 / 可选 DeepSeek Search / 指标）
   → DeepSeekAdapter
   → DeepSeek /chat/completions（thinking / reasoning_effort）
   ← SSE: reasoning / chunk / finish / error
@@ -125,7 +133,7 @@ Browser (index.html + assets/app.js)
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/chat` | SSE 流式对话；支持 `customInstructions`、`deepThinking`、`webSearch` |
+| POST | `/api/chat` | SSE 流式对话；支持 `customInstructions`、`deepThinking`、`webSearch`、`stage`、`subject`、`role`、`textbook` |
 | GET | `/api/history` | 当前内存会话历史 |
 | DELETE | `/api/chat` | 清空当前内存会话 |
 | GET | `/api/session` | 生成新的内存会话 ID |
@@ -184,6 +192,10 @@ src/main/resources/static/
 
 MIT License，详见 [LICENSE](./LICENSE)。
 
-维护者：suxiangyu138
+作者：苏巷雨（suxiangyu138）
 
-问题反馈：请提交 [Issue](https://github.com/suxiangyu138/via-scholar/issues)，或直接反馈给维护者。
+邮箱：suxiangyu_dev@foxmail.com
+
+仓库：[GitHub](https://github.com/suxiangyu138/via-scholar) · [Gitee](https://gitee.com/suxiangyu138/via-scholar)
+
+问题反馈：请提交 [Issue](https://github.com/suxiangyu138/via-scholar/issues)，或发送邮件。反馈时请附上复现步骤、设备与浏览器信息、相关截图，不要发送 API Key 等敏感信息。
