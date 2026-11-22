@@ -3,7 +3,7 @@ package com.chatbot.model;
 /**
  * 厂商配置
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 public class ModelProviderConfig {
     private String provider;

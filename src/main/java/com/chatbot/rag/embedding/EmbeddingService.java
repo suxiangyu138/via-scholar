@@ -21,7 +21,7 @@ import java.util.List;
  * 1. 云端模式：调用 DeepSeek/其他厂商的 Embedding API
  * 2. 本地模式：基于字符 n-gram TF-IDF 的轻量向量（无需联网，无需 API Key）
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 @Service
 public class EmbeddingService {

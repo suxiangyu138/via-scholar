@@ -12,7 +12,7 @@ import java.util.*;
 /**
  * 多厂商统一 SSE 控制器 + 对话历史管理
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 @RestController
 @RequestMapping("/api")
@@ -71,8 +71,10 @@ public class ChatController {
         String effectiveSid = sid;
         if (effectiveSid.isBlank()) {
             effectiveSid = UUID.randomUUID().toString();
-            response.addHeader("Set-Cookie", "sid=" + effectiveSid + "; Path=/");
         }
+        // 持久化归属 cookie：浏览器重启后历史对话仍可见；HttpOnly 避免被脚本读取
+        response.addHeader("Set-Cookie", "sid=" + effectiveSid
+                + "; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly");
         Long id = historyService.createSession(
                 body.get("title"), body.get("stage"), body.get("modelName"), effectiveSid);
         return Map.of("sessionId", id);
@@ -107,7 +109,7 @@ public class ChatController {
 
     /** 获取会话全部消息（非归属会话返回空） */
     @GetMapping("/history/messages/{sessionId}")
-    public List<Map<String, String>> getMessages(@PathVariable Long sessionId,
+    public List<Map<String, Object>> getMessages(@PathVariable Long sessionId,
             @CookieValue(value = "sid", defaultValue = "") String sid) {
         return historyService.getMessages(sessionId, sid);
     }
@@ -116,30 +118,9 @@ public class ChatController {
     @GetMapping("/providers")
     public List<Map<String, Object>> providers() {
         return List.of(
-                providerMap("deepseek", "深度求索 DeepSeek",
+                providerMap("deepseek", "DeepSeek",
                         "https://api.deepseek.com/v1",
-                        List.of("deepseek-v4-pro", "deepseek-v4-flash",
-                                "deepseek-v3.2", "deepseek-r1")),
-                providerMap("zhipu", "智谱AI GLM",
-                        "https://open.bigmodel.cn/api/paas/v4",
-                        List.of("glm-5.2", "glm-5-turbo",
-                                "glm-4.7-flash", "glm-4-flash")),
-                providerMap("qwen", "阿里通义千问",
-                        "https://dashscope.aliyuncs.com/compatible-mode/v1",
-                        List.of("qwen3.7-max", "qwen-max", "qwen-plus",
-                                "qwen-long")),
-                providerMap("moonshot", "Moonshot Kimi",
-                        "https://api.moonshot.cn/v1",
-                        List.of("kimi-k2.6", "kimi-k2.5",
-                                "moonshot-v1-128k")),
-                providerMap("minimax", "MiniMax 稀宇",
-                        "https://api.minimaxi.com/v1",
-                        List.of("MiniMax-M3", "MiniMax-M2.7",
-                                "MiniMax-M2.7-highspeed")),
-                providerMap("mimo", "小米 MiMo",
-                        "https://api.xiaomimimo.com/v1",
-                        List.of("mimo-v2.5-pro", "mimo-v2-pro",
-                                "mimo-v2-flash"))
+                        List.of("deepseek-flash", "deepseek-v4-pro"))
         );
     }
 

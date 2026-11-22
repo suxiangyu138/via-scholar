@@ -7,7 +7,7 @@ import java.util.Map;
 /**
  * 配置 API — 管理 API Key 等设置
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 @RestController
 @RequestMapping("/api/config")

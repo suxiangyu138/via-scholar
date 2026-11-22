@@ -3,7 +3,7 @@ package com.chatbot.rag.model;
 /**
  * 知识库统计信息
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 public class KnowledgeBaseStats {
 

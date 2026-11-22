@@ -1,5 +1,7 @@
 package com.chatbot.history;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -7,10 +9,12 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.*;
 
 /**
- * 对话历史持久化服务 — 管理会话和消息的数据库操作
+ * 对话历史持久化服务 — 管理会话和消息的数据库操作。
  */
 @Service
 public class ChatHistoryService {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final ChatSessionRepository sessionRepo;
     private final ChatMessageRepository messageRepo;
@@ -25,7 +29,7 @@ public class ChatHistoryService {
     public Long createSession(String title, String stage, String modelName, String ownerSid) {
         ChatSessionEntity session = new ChatSessionEntity();
         session.setSessionTitle(title != null ? title : "新对话");
-        session.setStageType(stage != null ? stage : "junior");
+        session.setStageType(stage != null ? stage : "all");
         session.setModelName(modelName != null ? modelName : "");
         session.setOwnerSid(ownerSid != null && !ownerSid.isBlank()
                 ? ownerSid : UUID.randomUUID().toString());
@@ -46,7 +50,7 @@ public class ChatHistoryService {
         List<Map<String, Object>> result = new ArrayList<>();
         for (ChatSessionEntity s : sessions) {
             if (s.getOwnerSid() == null || !s.getOwnerSid().equals(sid)) {
-                continue; // 无归属（历史遗留）或其他客户端的会话不可见
+                continue;
             }
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("sessionId", s.getSessionId());
@@ -63,17 +67,27 @@ public class ChatHistoryService {
     /** 保存一条消息（含思考过程） */
     @Transactional
     public void saveMessage(Long sessionId, String role, String content) {
-        saveMessage(sessionId, role, content, null);
+        saveMessage(sessionId, role, content, null, null);
     }
 
     @Transactional
     public void saveMessage(Long sessionId, String role, String content, String thinkRaw) {
+        saveMessage(sessionId, role, content, thinkRaw, null);
+    }
+
+    /** 保存一条消息（含思考过程与 token/费用指标） */
+    @Transactional
+    public void saveMessage(Long sessionId, String role, String content,
+                            String thinkRaw, String usageJson) {
         ChatMessageEntity msg = new ChatMessageEntity();
         msg.setSessionId(sessionId);
         msg.setRole(role);
         msg.setRawContent(content);
         if (thinkRaw != null && !thinkRaw.isEmpty()) {
             msg.setThinkRaw(thinkRaw);
+        }
+        if (usageJson != null && !usageJson.isBlank()) {
+            msg.setUsageJson(usageJson);
         }
         messageRepo.save(msg);
         sessionRepo.findById(sessionId).ifPresent(s -> {
@@ -88,18 +102,26 @@ public class ChatHistoryService {
     }
 
     /** 获取某会话的全部消息（非归属会话返回空列表） */
-    public List<Map<String, String>> getMessages(Long sessionId, String sid) {
+    public List<Map<String, Object>> getMessages(Long sessionId, String sid) {
         if (!isSessionOwned(sessionId, sid)) {
             return List.of();
         }
         List<ChatMessageEntity> msgs = messageRepo.findBySessionIdOrderByCreateTimeAsc(sessionId);
-        List<Map<String, String>> result = new ArrayList<>();
+        List<Map<String, Object>> result = new ArrayList<>();
         for (ChatMessageEntity m : msgs) {
-            Map<String, String> item = new LinkedHashMap<>();
+            Map<String, Object> item = new LinkedHashMap<>();
             item.put("role", m.getRole());
             item.put("content", m.getRawContent());
             if (m.getThinkRaw() != null && !m.getThinkRaw().isEmpty()) {
                 item.put("thinkRaw", m.getThinkRaw());
+            }
+            if (m.getUsageJson() != null && !m.getUsageJson().isBlank()) {
+                try {
+                    item.put("usage", MAPPER.readValue(m.getUsageJson(),
+                            new TypeReference<Map<String, Object>>() {}));
+                } catch (Exception ignored) {
+                    // 指标损坏时不影响消息展示
+                }
             }
             item.put("time", m.getCreateTime() != null ? m.getCreateTime().toString() : "");
             result.add(item);

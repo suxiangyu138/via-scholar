@@ -3,7 +3,7 @@ package com.chatbot.rag.model;
 /**
  * 向量检索结果
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 public class SearchResult implements Comparable<SearchResult> {
 

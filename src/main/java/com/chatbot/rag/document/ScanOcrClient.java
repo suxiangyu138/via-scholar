@@ -17,7 +17,7 @@ import java.time.Duration;
  * <p>
  * 调用 Python OCR 微服务（127.0.0.1:8001）识别扫描图片页
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 @Service
 public class ScanOcrClient {

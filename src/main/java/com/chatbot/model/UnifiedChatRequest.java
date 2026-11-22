@@ -5,7 +5,7 @@ import java.util.List;
 /**
  * 前端 → 后端 统一请求体（支持 K12+大学 四层学段体系）
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 public class UnifiedChatRequest {
 
@@ -39,8 +39,8 @@ public class UnifiedChatRequest {
     private String modelName;
     private String apiKey;
     private String baseUrl;
-    private Double temperature = 0.2;
-    private Integer maxTokens = 4096;
+    private Double temperature = 0.3;
+    private Integer maxTokens = 8192;
     private List<Message> messages;
     /** 学段：primary / junior / senior / university */
     private String stage;
@@ -52,6 +52,8 @@ public class UnifiedChatRequest {
     private int ragTopK = 4;
     /** 数据库会话ID（持久化用） */
     private Long sessionId;
+    /** 本轮消息附带的附件 ID（通过 /api/attachments 上传） */
+    private List<String> attachments;
 
     public String getProvider() { return provider; }
     public void setProvider(String v) { provider = v; }
@@ -77,6 +79,8 @@ public class UnifiedChatRequest {
     public void setRagTopK(int v) { ragTopK = v; }
     public Long getSessionId() { return sessionId; }
     public void setSessionId(Long v) { sessionId = v; }
+    public List<String> getAttachments() { return attachments; }
+    public void setAttachments(List<String> v) { attachments = v; }
 
     /** @deprecated 使用 getStage() */
     @Deprecated
@@ -88,6 +92,8 @@ public class UnifiedChatRequest {
     public static class Message {
         private String role;
         private String content;
+        /** OpenAI 兼容的多模态内容片段；为空时使用 content 字符串 */
+        private List<java.util.Map<String, Object>> contentParts;
         public Message() {}
         public Message(String role, String content) {
             this.role = role; this.content = content;
@@ -96,5 +102,7 @@ public class UnifiedChatRequest {
         public void setRole(String v) { role = v; }
         public String getContent() { return content; }
         public void setContent(String v) { content = v; }
+        public List<java.util.Map<String, Object>> getContentParts() { return contentParts; }
+        public void setContentParts(List<java.util.Map<String, Object>> v) { contentParts = v; }
     }
 }

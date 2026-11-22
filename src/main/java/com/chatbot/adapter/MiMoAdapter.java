@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 /**
  * 小米 MiMo — OpenAI 兼容协议
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 @Component
 public class MiMoAdapter extends BaseModelAdapter {

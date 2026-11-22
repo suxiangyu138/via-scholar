@@ -1,1318 +1,239 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>苏巷雨 · 智慧教学智能体</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F7F8FA">
+<meta name="description" content="问道 Via Scholar：面向 K12 教师与学生的 AI 教学智能体 Pathfinder。">
+<link rel="icon" href="/favicon.ico?v=20261123b" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/brand-icon-32.png?v=20261123b">
+<link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png?v=20261123b">
+<link rel="manifest" href="/manifest.json?v=20261123b">
+<title>问道 Via Scholar · K12 AI 教学智能体</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+<link rel="stylesheet" href="/assets/app.css?v=20261123ba">
+</head>
+<body>
+<div class="app" id="app">
+
+  <div class="drawer-mask" id="drawer-mask"></div>
+
+  <aside class="sidebar" id="sidebar" aria-label="侧边栏">
+    <div class="sidebar-head">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <img src="/assets/brand-mark-black.png" alt="">
+        </span>
+        <span class="brand-text">
+          <strong>问道</strong>
+          <small>Via Scholar · K12 教学</small>
+        </span>
+      </div>
+      <button class="icon-btn sidebar-close" id="sidebar-close" aria-label="关闭侧边栏">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <button class="new-chat-btn" id="new-chat-btn">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+      新对话
+    </button>
+
+    <div class="sidebar-scroll">
+      <section class="side-section">
+        <div class="section-head">
+          <span>历史对话</span>
+          <button class="icon-btn tiny" id="refresh-history" aria-label="刷新历史">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+        <div class="history-list" id="history-list"></div>
+      </section>
+
+      <section class="side-section">
+        <div class="section-head">
+          <span>错题本</span>
+          <span class="section-count" id="error-count">0</span>
+        </div>
+        <div class="error-list" id="error-list"></div>
+      </section>
+    </div>
+
+    <div class="sidebar-foot">
+      <button class="model-status" id="sidebar-model-btn" aria-haspopup="dialog">
+        <span class="status-dot" id="sidebar-model-dot"></span>
+        <span class="model-status-text">
+          <small>当前模型</small>
+          <strong id="sidebar-model-label">未配置</strong>
+        </span>
+        <svg class="chev" viewBox="0 0 24 24" fill="none"><path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="foot-hint">API Key 仅保存在本机浏览器</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <button class="icon-btn menu-btn" id="menu-btn" aria-label="打开侧边栏">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <div class="topbar-title">
+        <span class="topbar-brand-mobile">
+          <span class="brand-mark small" aria-hidden="true">
+            <img src="/assets/brand-mark-black.png" alt="">
+          </span>
+          <span class="brand-word">问道</span>
+        </span>
+        <span class="topbar-page">对话</span>
+        <span class="topbar-tag">K12 教学</span>
+      </div>
+      <div class="topbar-actions">
+        <button class="balance-chip" id="balance-chip" title="点击刷新余额">
+          <span class="balance-label">余额</span>
+          <strong id="balance-value">--</strong>
+        </button>
+        <button class="model-chip" id="model-chip" aria-haspopup="dialog">
+          <span class="model-chip-dot" id="model-chip-dot"></span>
+          <span class="model-chip-text" id="model-chip-text">选择模型</span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none"><path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="icon-btn top-new-chat" id="top-new-chat" aria-label="新对话">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="chat-scroll" id="chat-scroll">
+      <div class="chat-inner">
+        <section class="welcome" id="welcome">
+          <div class="eyebrow"><span class="pulse-dot"></span>Pathfinder · K12 AI 教学智能体</div>
+          <h1>教得更清楚，<br>学得更明白。</h1>
+          <p class="welcome-sub">问道 Via Scholar，面向 K12 教师与学生。解题、备课、出题与讲概念，都在一个对话里完成。</p>
+          <div class="intro-grid">
+            <div class="intro-card">
+              <span class="intro-kicker">学生</span>
+              <strong>分步讲懂</strong>
+              <p>贴题目或上传照片，按步骤讲解，标注公式、依据和易错点。</p>
+            </div>
+            <div class="intro-card">
+              <span class="intro-kicker">教师</span>
+              <strong>备课与出题</strong>
+              <p>生成教学目标、课堂引入、例题变式、分层作业和讲解脚本。</p>
+            </div>
+            <div class="intro-card">
+              <span class="intro-kicker">附件</span>
+              <strong>图片与文件</strong>
+              <p>支持题目照片、PDF、文本资料，单条消息最多 50 个附件。</p>
+            </div>
+          </div>
+          <div class="intro-foot">
+            <span>DeepSeek 驱动</span>
+            <span>余额与用量可见</span>
+            <span>对话保存在本机</span>
+          </div>
+        </section>
+        <div class="chat-list" id="chat-list" aria-live="polite"></div>
+      </div>
+      <button class="scroll-bottom" id="scroll-bottom" aria-label="回到底部">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M6 13l6 6 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+
+    <div class="composer-zone">
+      <div class="composer" id="composer">
+        <div class="attachments" id="attachments" hidden></div>
+        <textarea id="input-box" rows="1" placeholder="输入问题，或上传题目图片 / 文件…" maxlength="8000" enterkeyhint="send"></textarea>
+        <div class="composer-bar">
+          <div class="composer-left">
+            <button class="tool-btn" id="attach-btn" type="button" aria-label="上传图片或文件">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M8.5 12.5 14 7a3.5 3.5 0 0 1 5 5l-7.3 7.3a5 5 0 0 1-7.1-7.1L12 4.9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              附件
+            </button>
+            <span class="attach-count" id="attach-count" hidden>0/50</span>
+            <span class="upload-state" id="upload-state" hidden>上传中…</span>
+          </div>
+          <div class="composer-right">
+            <button class="stop-btn" id="stop-btn" hidden>停止</button>
+            <button class="send-btn" id="send-btn" aria-label="发送">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M12 19V5M6 11l6-6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </div>
+        <input type="file" id="file-input" multiple hidden
+               accept="image/png,image/jpeg,image/webp,image/gif,.pdf,.txt,.md,.markdown,.csv,.json,.html,.htm,.tex,.log">
+      </div>
+      <div class="composer-hint">Enter 发送 · Shift + Enter 换行 · 单条最多 50 个附件</div>
+    </div>
+  </main>
+</div>
+
+<div class="overlay" id="model-overlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="model-title">
+    <div class="sheet-grip"></div>
+    <div class="sheet-head">
+      <h2 id="model-title">DeepSeek 模型与密钥</h2>
+      <button class="icon-btn" id="model-close" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="sheet-body">
+      <div class="row-label">
+        <span class="sheet-label no-margin">模型</span>
+        <button type="button" class="text-btn" id="refresh-models">获取最新模型</button>
+      </div>
+      <div class="model-list" id="model-list"></div>
+      <div class="model-hint" id="model-hint">填写 API Key 后可获取上游最新模型</div>
+      <label class="field">
+        <span>API Key</span>
+        <div class="input-wrap">
+          <input id="api-key" type="password" autocomplete="off" placeholder="sk-...">
+          <button type="button" class="text-btn" id="toggle-key">显示</button>
+        </div>
+      </label>
+      <details class="advanced">
+        <summary>高级设置</summary>
+        <label class="field">
+          <span>Base URL</span>
+          <input id="base-url" type="url" placeholder="https://...">
+        </label>
+      </details>
+    </div>
+    <div class="sheet-foot">
+      <button class="primary-btn" id="save-model">保存并使用</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="saved-overlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="saved-title">
+    <div class="sheet-grip"></div>
+    <div class="sheet-head">
+      <h2 id="saved-title">错题本</h2>
+      <button class="icon-btn" id="saved-close" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="sheet-body">
+      <div class="saved-meta" id="saved-time"></div>
+      <div class="saved-question" id="saved-question"></div>
+      <div class="saved-answer markdown" id="saved-answer"></div>
+    </div>
+    <div class="sheet-foot row">
+      <button class="ghost-btn danger" id="saved-delete">删除</button>
+      <button class="ghost-btn" id="saved-copy">复制答案</button>
+      <button class="primary-btn" id="saved-close-bottom">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<!-- 本地文件（非 CDN）：AI 回答与知识库内容一律先净化再插入 DOM -->
 <script src="/dompurify.min.js"></script>
-<script>
-marked.use({breaks:true,gfm:true,renderer:{code({text:code,lang}){
-  if(lang&&typeof hljs!=='undefined'&&hljs.getLanguage(lang)){try{var h=hljs.highlight(code,{language:lang,ignoreIllegals:true});
-  return'<div class="step-block"><div class="step-header">解题步骤</div><pre><code class="hljs language-'+lang+'">'+h.value+'</code></pre></div>';}catch(e){}}
-  return'<div class="step-block"><div class="step-header">解题步骤</div><pre><code>'+code+'</code></pre></div>';}}});
-</script>
-<style>
-:root{
-  --primary:#9d7cff;--primary-light:#b49eff;--primary-bg:rgba(140,100,255,.15);
-  --bg:#080822;--surface:rgba(255,255,255,.05);--surface2:rgba(255,255,255,.03);
-  --text:#f0f4ff;--text2:rgba(200,195,220,.7);
-  --user-bg:linear-gradient(135deg,#7b61ff,#4488ff);
-  --ai-bg:rgba(255,255,255,.04);--ai-border:rgba(180,150,255,.12);--input-bg:rgba(255,255,255,.05);--input-border:rgba(190,170,255,.2);
-  --code-bg:rgba(10,10,40,.6);--sep:rgba(180,160,240,.1);--accent:#a78bfa;--success:#34d399;
-  --sidebar-bg:rgba(255,255,255,.03);--sidebar-w:0px;--card-shadow:0 4px 16px rgba(0,0,0,.2);
-  --welcome-gradient:linear-gradient(135deg,#7b61ff,#4488ff);
-  --glass-bg:rgba(255,255,255,.06);--glass-border:rgba(200,180,255,.15);--glass-shadow:0 8px 32px rgba(0,0,10,.3);
-}
-.light{
-  --primary:#6366f1;--primary-light:#818cf8;--primary-bg:rgba(99,102,241,.08);
-  --bg:linear-gradient(160deg,#f0f4ff 0%,#e8f0fe 40%,#f5f3ff 100%);--surface:#fff;--surface2:#f8fafc;
-  --text:#1e293b;--text2:#64748b;
-  --user-bg:linear-gradient(135deg,#6366f1,#4f46e5);
-  --ai-bg:#fff;--ai-border:#e2e8f0;--input-bg:#fff;--input-border:#d1d5db;
-  --code-bg:#1e293b;--sep:#e2e8f0;--accent:#7c3aed;--success:#059669;
-  --sidebar-bg:#f8fafc;
-  --welcome-gradient:linear-gradient(135deg,#6366f1,#8b5cf6);
-  --card-shadow:0 1px 3px rgba(0,0,0,.06);
-  --glass-bg:rgba(255,255,255,.7);--glass-border:rgba(200,200,220,.3);--glass-shadow:0 4px 20px rgba(0,0,0,.08);
-}
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{height:100%;font-family:"Microsoft YaHei","PingFang SC",-apple-system,sans-serif;color:var(--text);overflow:hidden}
-body{background:linear-gradient(-45deg,#050520,#101035,#1a1040,#080828);background-size:400% 400%;animation:gradientFlow 18s ease infinite}
-body.light{background:linear-gradient(160deg,#f0f4ff 0%,#e8f0fe 40%,#f5f3ff 100%);background-size:100% 100%;animation:none}
-@keyframes gradientFlow{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
-#app{display:flex;height:100vh;position:relative;z-index:1}
-/* 星空粒子画布 */
-#particle-canvas{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none}
-.light #particle-canvas{display:none}
-/* 鼠标跟随柔光 */
-body::after{content:"";position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;background:radial-gradient(circle at var(--mx,50%) var(--my,50%),rgba(130,80,255,.1),transparent 35%);transition:background .5s}
-.light body::after{background:radial-gradient(circle at var(--mx,50%) var(--my,50%),rgba(99,102,241,.06),transparent 35%)}
-/* 通用玻璃拟态 */
-.glass{background:var(--glass-bg);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid var(--glass-border);border-radius:16px;box-shadow:var(--glass-shadow);transition:all .35s cubic-bezier(.2,0,.2,1)}
-.glass:hover{background:rgba(255,255,255,.09);border-color:rgba(180,140,255,.3);box-shadow:0 12px 40px rgba(120,60,255,.2);transform:translateY(-2px)}
-.light .glass{background:rgba(255,255,255,.65);border:1px solid rgba(200,190,230,.25);box-shadow:0 4px 20px rgba(0,0,0,.06)}
-.light .glass:hover{background:rgba(255,255,255,.8);border-color:rgba(140,100,255,.25);box-shadow:0 8px 30px rgba(100,80,200,.1)}
-/* 渐变发光文字 */
-.text-glow{background:linear-gradient(90deg,#a88bff,#63d0ff,#c99bff);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 22px rgba(160,120,255,.4);letter-spacing:2px}
-/* 渐变按钮 */
-.btn-gradient{position:relative;padding:10px 22px;border-radius:12px;border:none;background:linear-gradient(135deg,#7b61ff,#4488ff);color:#fff;font-weight:600;overflow:hidden;transition:all .3s ease;cursor:pointer}
-.btn-gradient::before{content:"";position:absolute;top:0;left:-100%;width:100%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent);transition:left .5s ease}
-.btn-gradient:hover::before{left:100%}
-.btn-gradient:hover{transform:scale(1.04);box-shadow:0 0 22px rgba(110,80,255,.45)}
-/* 流光边框 */
-.glow-border{position:relative;overflow:hidden}
-.glow-border::before{content:"";position:absolute;top:-50%;left:-50%;width:200%;height:200%;background:conic-gradient(from 0deg,#7b61ff,#44ccff,#c084fc,#7b61ff);animation:spin 4s linear infinite;z-index:-1;opacity:.15}
-@keyframes spin{100%{transform:rotate(360deg)}}
-/* 滚动条 */
-::-webkit-scrollbar{width:5px;height:5px}
-::-webkit-scrollbar-track{background:rgba(255,255,255,.03);border-radius:10px}
-::-webkit-scrollbar-thumb{background:rgba(140,100,255,.35);border-radius:10px}
-::-webkit-scrollbar-thumb:hover{background:rgba(140,100,255,.55)}
-.light ::-webkit-scrollbar-thumb{background:rgba(99,102,241,.25)}
-.light ::-webkit-scrollbar-thumb:hover{background:rgba(99,102,241,.45)}
-
-/* ===== 侧边栏 ===== */
-#sidebar{width:260px;min-width:260px;background:var(--glass-bg);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-right:1px solid var(--glass-border);display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;transition:margin-left .3s;z-index:50;flex-shrink:0;margin:10px 0 10px 10px;border-radius:16px}
-.light #sidebar{background:rgba(255,255,255,.6);border-right:1px solid rgba(200,190,230,.2)}
-#sidebar.collapsed{margin-left:-270px}
-.side-section{padding:12px 14px;border-bottom:1px solid var(--sep)}
-.side-section h4{font-size:13px;color:var(--text2);margin-bottom:10px;display:flex;align-items:center;gap:6px}
-.grade-toggle{display:flex;gap:6px}
-.grade-btn{flex:1;padding:6px 12px;border-radius:18px;border:1.5px solid var(--sep);background:var(--surface);color:var(--text2);font-size:12px;cursor:pointer;text-align:center;transition:all .2s}
-.grade-btn.active{background:var(--primary);color:#fff;border-color:var(--primary);font-weight:600}
-.grade-btn:hover:not(.active){border-color:var(--primary-light);color:var(--primary)}
-.error-item{font-size:12px;padding:6px 8px;margin:3px 0;background:var(--surface);border-radius:8px;cursor:pointer;border:1px solid var(--sep);transition:all .2s}
-.error-item:hover{border-color:var(--primary-light);transform:translateX(2px)}
-.error-item .eq{color:var(--text);font-weight:500}
-.error-item .em{color:var(--text2);font-size:10px;display:block;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.error-del{float:right;color:#ef4444;font-size:10px;padding:2px 6px;border-radius:4px;border:1px solid rgba(239,68,68,.2);background:rgba(239,68,68,.08);cursor:pointer}
-.error-del:hover{background:rgba(239,68,68,.2)}
-.empty-hint{font-size:11px;color:var(--text2);text-align:center;padding:16px 0}
-/* 历史对话列表 */
-.history-item{font-size:12px;padding:6px 10px;margin:2px 0;cursor:pointer;border-radius:8px;transition:all .2s;border-left:2px solid transparent;position:relative;color:var(--text)}
-.history-item:hover{background:var(--primary-bg);border-left-color:var(--primary-light)}
-.history-item.active{background:var(--primary-bg);border-left-color:var(--primary);font-weight:600}
-.history-item .htitle{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:20px}
-.history-item .htime{font-size:10px;color:var(--text2);margin-top:1px}
-.history-item .hdel{position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:10px;color:#ef4444;cursor:pointer;padding:2px 4px;border-radius:3px;display:none}
-.history-item:hover .hdel{display:block}
-.history-item .hdel:hover{background:rgba(239,68,68,.15)}
-
-/* ===== 主区域 ===== */
-#main-area{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
-#top-bar{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;margin:10px 12px 0;background:var(--glass-bg);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid var(--glass-border);border-radius:16px;flex-shrink:0;gap:8px;z-index:40}
-.light #top-bar{background:rgba(255,255,255,.7);border:1px solid rgba(200,190,230,.2)}
-#top-bar h1{font-size:17px;font-weight:700;white-space:nowrap;background:linear-gradient(90deg,#a88bff,#63d0ff,#c99bff);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.light #top-bar h1{background:var(--welcome-gradient);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.top-btns{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-.top-btn,.model-sel{font-size:11px;padding:4px 10px;border-radius:14px;border:1px solid var(--sep);background:var(--surface2);color:var(--text2);cursor:pointer;transition:all .2s;white-space:nowrap}
-.top-btn:hover,.model-sel:hover{background:rgba(140,100,255,.15);color:var(--text);border-color:var(--primary-light)}
-.model-sel{padding:4px 8px;appearance:none;-webkit-appearance:none;text-align:center;max-width:130px}
-.model-name{font-size:11px;color:var(--text2);margin:0 2px;white-space:nowrap}
-.math-badge{display:inline-block;padding:2px 8px;border-radius:10px;background:rgba(160,130,255,.15);color:var(--primary-light);font-size:10px;font-weight:600;margin-left:4px;border:1px solid rgba(160,130,255,.2)}
-.light .math-badge{background:#fef3c7;color:#92400e;border-color:#fcd34d}
-
-#chat-list{flex:1;overflow-y:auto;padding:16px 12px 10px;display:flex;flex-direction:column;gap:12px;scroll-behavior:smooth}
-.row{display:flex;width:100%;animation:fadeUp .35s ease-out}
-.row.user{justify-content:flex-end}.row.ai{justify-content:flex-start}.row.system{justify-content:center}
-.bubble{max-width:85%;padding:14px 18px;font-size:15px;line-height:1.7;word-wrap:break-word;overflow-wrap:break-word;white-space:pre-wrap;word-break:break-word;position:relative}
-.user .bubble{background:linear-gradient(135deg,#7b61ff,#4488ff);color:#fff;border-radius:18px 18px 4px 18px;box-shadow:0 4px 16px rgba(120,80,255,.3)}
-.ai .bubble{background:var(--glass-bg);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);color:var(--text);border:1px solid var(--glass-border);border-radius:18px 18px 18px 4px;box-shadow:var(--glass-shadow)}
-.light .ai .bubble{background:rgba(255,255,255,.7);border:1px solid rgba(200,190,230,.2)}
-.system .bubble{background:0 0;color:var(--text2);text-align:center;font-size:13px;max-width:100%}
-.time-stamp{font-size:10px;color:var(--text2);margin-top:4px;text-align:right}.ai .time-stamp{text-align:left}
-/* AI回答卡片化 */
-.ai .bubble h1,.ai .bubble h2,.ai .bubble h3{font-size:16px;font-weight:700;margin:8px 0 4px;padding-bottom:4px}
-.ai .bubble h1{font-size:18px;color:var(--primary);border-bottom:2px solid var(--primary-bg)}
-.ai .bubble h2{font-size:16px;color:var(--primary-light);border-bottom:1px solid var(--primary-bg)}
-.ai .bubble h3{font-size:15px;color:var(--text)}
-.ai .bubble p{margin:4px 0}
-.ai .bubble ul,.ai .bubble ol{margin:4px 0 4px 22px}.ai .bubble li{margin:3px 0}
-.ai .bubble code{background:rgba(140,100,255,.1);padding:2px 6px;border-radius:4px;font-size:13px;font-family:Consolas,monospace;color:#f472b6}
-.light .ai .bubble code{background:#f1f5f9;color:#e11d48}
-.ai .bubble pre,.step-block{background:var(--code-bg);border-radius:10px;padding:14px;overflow-x:auto;margin:10px 0;font-size:13px;line-height:1.6}
-.ai .bubble pre code{background:0 0;padding:0;font-size:13px;color:#e2e8f0}
-.step-block{position:relative;margin:10px 0;border-left:3px solid var(--primary)}
-.step-header{display:flex;align-items:center;gap:6px;color:var(--primary-light);font-size:12px;font-weight:600;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(160,140,255,.15)}
-.ai .bubble blockquote{border-left:3px solid var(--primary);padding:6px 14px;margin:10px 0;background:var(--primary-bg);border-radius:0 6px 6px 0;color:var(--text2)}
-.ai .bubble table{border-collapse:collapse;margin:10px 0;width:100%;font-size:13px}
-.ai .bubble th{background:var(--primary);color:#fff;padding:8px 12px;font-weight:600}
-.ai .bubble td{border:1px solid var(--sep);padding:6px 12px}.ai .bubble tr:nth-child(even) td{background:rgba(140,100,255,.05)}
-.ai .bubble a{color:var(--primary)}.ai .bubble hr{border:0;border-top:1px solid var(--sep);margin:12px 0}.ai .bubble strong{font-weight:700;color:var(--primary-light)}
-/* KaTeX公式增强 — 防跳动 */
-.katex-display{margin:12px 0;padding:8px 0;overflow-x:auto;min-height:44px;overflow-anchor:none}
-.katex{font-size:1.1em}
-.katex-tag{min-width:32px;text-align:right;display:inline-block}
-html{overflow-anchor:auto !important}
-/* 思考过程折叠面板 */
-.think-toggle-bar{margin-bottom:8px;min-height:24px}
-.toggle-think-btn{padding:3px 12px;border-radius:16px;border:1px solid rgba(160,140,255,.25);background:rgba(255,255,255,.03);color:var(--text2);cursor:pointer;transition:all .25s;font-size:12px}
-.toggle-think-btn:hover{background:rgba(120,80,255,.12);border-color:var(--primary);color:var(--primary-light)}
-.toggle-think-btn.active{color:var(--accent);border-color:rgba(160,140,255,.4)}
-.collapse-wrap{max-height:0;overflow:hidden;transition:max-height .4s ease-out;opacity:0;margin-top:0}
-.collapse-wrap.open{max-height:3000px;opacity:1;margin-top:10px}
-.think-block{border:1px dashed rgba(160,140,200,.2);border-radius:10px;background:rgba(100,80,160,.06);padding:10px 14px;color:var(--text2);font-size:13px;line-height:1.6}
-.think-block .think-title{font-weight:600;margin-bottom:6px;color:var(--accent);font-size:12px}
-.think-block .think-content{white-space:pre-wrap;word-break:break-word}
-.think-block .katex{font-size:.95em}
-@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-.loading-dots{color:var(--text2);font-style:italic}
-.loading-dots .dot{animation:blink 1.4s infinite;font-weight:700}
-.loading-dots .dot:nth-child(2){animation-delay:.2s}.loading-dots .dot:nth-child(3){animation-delay:.4s}
-@keyframes blink{0%,20%{opacity:0}50%{opacity:1}100%{opacity:0}}
-#back-btn{position:fixed;right:24px;bottom:160px;background:linear-gradient(135deg,#7b61ff,#4488ff);color:#fff;border:none;border-radius:24px;padding:8px 18px;font-size:13px;cursor:pointer;box-shadow:0 4px 16px rgba(120,80,255,.3);display:none;z-index:10;transition:all .3s}
-#back-btn:hover{transform:translateY(-2px);box-shadow:0 6px 22px rgba(120,80,255,.45)}
-#input-area{background:var(--glass-bg);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1px solid var(--glass-border);padding:10px 16px 14px;flex-shrink:0;margin:0 12px 10px;border-radius:16px}
-.light #input-area{background:rgba(255,255,255,.7);border-top:1px solid rgba(200,190,230,.2)}
-#formula-bar{display:flex;gap:4px;margin-bottom:6px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}
-#formula-bar button{font-size:11px;padding:4px 10px;border-radius:14px;border:1px solid rgba(160,130,255,.2);background:rgba(140,100,255,.1);color:var(--primary-light);cursor:pointer;white-space:nowrap;transition:all .15s;font-family:Consolas,monospace}
-#formula-bar button:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
-#quick-bar{display:flex;gap:6px;margin-bottom:8px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}
-#quick-bar button{font-size:12px;background:var(--surface2);color:var(--primary-light);border:1.5px solid rgba(140,120,255,.2);border-radius:20px;padding:5px 14px;cursor:pointer;white-space:nowrap;transition:all .2s;font-weight:500}
-#quick-bar button:hover{background:rgba(140,100,255,.12);border-color:var(--primary-light);transform:translateY(-1px)}
-#quick-bar button.math-action{background:rgba(140,100,255,.1);color:var(--accent);border-color:rgba(160,130,255,.2)}
-#quick-bar button.math-action:hover{background:rgba(140,100,255,.2);border-color:var(--accent)}
-#input-row{display:flex;gap:8px;align-items:flex-end}
-#input-box{flex:1;padding:12px 16px;background:rgba(255,255,255,.04);border:1.5px solid rgba(190,170,255,.2);border-radius:24px;font-size:15px;font-family:inherit;resize:none;outline:none;min-height:46px;max-height:120px;line-height:1.5;color:var(--text);transition:all .25s}
-.light #input-box{background:var(--input-bg);border:1.5px solid var(--input-border)}
-#input-box:focus{border-color:var(--primary);box-shadow:0 0 0 4px rgba(130,100,255,.15)}
-#send-btn{padding:12px 24px;background:linear-gradient(135deg,#7b61ff,#4488ff);color:#fff;border:none;border-radius:24px;font-size:15px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .2s;box-shadow:0 2px 12px rgba(120,80,255,.3)}
-#send-btn:hover{transform:translateY(-1px);box-shadow:0 4px 20px rgba(120,80,255,.45)}
-#send-btn:disabled{background:rgba(140,120,200,.3);box-shadow:none;cursor:not-allowed;transform:none}
-#stop-btn{padding:12px 24px;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border:none;border-radius:24px;font-size:15px;font-weight:600;cursor:pointer;display:none;white-space:nowrap;box-shadow:0 2px 8px rgba(239,68,68,.2)}
-#status{font-size:11px;color:var(--text2);padding:3px 18px 0}
-/* 侧边栏品牌头 */
-.side-brand{text-align:center;padding:14px 12px;background:linear-gradient(135deg,#7b61ff,#4488ff);border-radius:16px 16px 0 0}
-.side-brand .sb-name{font-size:20px;font-weight:900;color:#fff;letter-spacing:2px}
-.side-brand .sb-sub{font-size:11px;color:rgba(255,255,255,.8);margin-top:2px}
-/* 侧边栏切换按钮 */
-#sidebar-toggle{position:fixed;left:0;top:50%;transform:translateY(-50%);background:var(--primary);color:#fff;border:none;border-radius:0 8px 8px 0;padding:16px 6px;font-size:12px;cursor:pointer;z-index:60;writing-mode:vertical-lr;transition:all .2s;box-shadow:0 0 16px rgba(130,100,255,.3)}
-#sidebar-toggle:hover{background:var(--primary-light);padding:20px 8px;box-shadow:0 0 24px rgba(130,100,255,.5)}
-/* Toast */
-#toast{position:fixed;bottom:120px;left:50%;transform:translateX(-50%);background:rgba(20,15,45,.9);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);color:#fff;padding:8px 20px;border-radius:20px;font-size:13px;z-index:200;opacity:0;transition:opacity .3s;pointer-events:none;border:1px solid rgba(160,130,255,.2)}
-.light #toast{background:rgba(30,41,59,.9);border:1px solid rgba(0,0,0,.1)}
-/* 收藏按钮浮层 */
-#fav-btn{position:fixed;right:24px;bottom:210px;background:rgba(160,130,255,.1);color:var(--primary-light);border:1px solid rgba(160,130,255,.2);border-radius:20px;padding:6px 14px;font-size:12px;cursor:pointer;z-index:10;display:none;transition:all .2s;font-weight:500}
-#fav-btn:hover{background:rgba(160,130,255,.2);border-color:var(--primary)}
-.light #fav-btn{background:#fef3c7;color:#92400e;border-color:#fcd34d}
-.light #fav-btn:hover{background:#fde68a}
-/* RAG 开关激活态 */
-#rag-toggle:checked + #rag-toggle-bg{background:var(--primary)}
-#rag-toggle:checked ~ #rag-toggle-dot{transform:translateX(16px)}
-.kb-file-item{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;margin:3px 0;background:var(--surface);border-radius:8px;font-size:12px;border:1px solid var(--sep)}
-.kb-file-item:hover{border-color:var(--primary-light)}
-.kb-file-item .fn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.kb-file-item .fs{color:var(--text2);font-size:10px;margin:0 8px}
-.kb-file-item .kb-del{color:#ef4444;font-size:10px;cursor:pointer;padding:2px 6px;border:1px solid rgba(239,68,68,.2);border-radius:4px;flex-shrink:0}
-.kb-file-item .kb-del:hover{background:rgba(239,68,68,.1)}
-.kb-stats{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0;font-size:12px}
-.kb-stats span{background:var(--primary-bg);padding:4px 10px;border-radius:10px;color:var(--primary)}
-
-/* 设置弹窗 */
-#settings-overlay,#model-config-overlay,#kb-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.4);z-index:100;justify-content:center;align-items:center}
-#settings-dialog{background:var(--glass-bg);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-radius:16px;padding:28px;width:460px;max-height:90vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,.4);color:var(--text);border:1px solid var(--glass-border)}
-.light #settings-dialog{background:#fff;box-shadow:0 12px 40px rgba(0,0,0,.15);border:1px solid var(--sep)}
-#settings-dialog h3{font-size:18px;font-weight:700;margin-bottom:18px}
-#settings-dialog label{display:block;font-size:13px;color:var(--text2);margin-top:12px;margin-bottom:4px}
-#settings-dialog input,#settings-dialog select{width:100%;padding:10px 14px;background:var(--input-bg);border:1px solid var(--input-border);border-radius:10px;font-size:14px;margin-bottom:4px;color:var(--text)}
-#settings-dialog .btn-row{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
-#settings-dialog .btn-row button{padding:10px 22px;border-radius:10px;border:none;cursor:pointer;font-size:14px;font-weight:600;transition:all .2s}
-#settings-dialog .btn-save{background:linear-gradient(135deg,#7b61ff,#4488ff);color:#fff}
-#settings-dialog .btn-save:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(120,80,255,.4)}
-#settings-dialog .btn-cancel{background:var(--surface2);color:var(--text);border:1px solid var(--sep)}
-/* 响应式 */
-@media(max-width:768px){
-  #sidebar{position:fixed;left:0;top:0;height:100%;z-index:55;margin-left:0}
-  #sidebar.collapsed{margin-left:-260px}
-  #sidebar-toggle{left:0}
-  #top-bar h1{font-size:14px}
-  #top-bar{flex-wrap:wrap;padding:8px}
-}
-</style>
-</head>
-<body>
-<canvas id="particle-canvas"></canvas>
-<div id="app">
-<!-- 侧边栏切换 -->
-<button id="sidebar-toggle" onclick="toggleSidebar()" title="功能面板">教学工具</button>
-
-<!-- 侧边栏 -->
-<div id="sidebar">
-  <div class="side-brand">
-    <div class="sb-name">苏巷雨</div>
-    <div class="sb-sub">智慧教学智能体</div>
-  </div>
-  <div class="side-section" id="history-section">
-    <h4>历史对话
-      <button class="top-btn" onclick="createNewSession()" style="margin-left:auto" title="新建对话">＋ 新建</button>
-    </h4>
-    <div id="history-list" style="max-height:180px;overflow-y:auto">
-      <div class="empty-hint">加载中...</div>
-    </div>
-  </div>
-  <div class="side-section">
-    <h4>学段选择</h4>
-    <select id="stage-sel" onchange="onStageChange()" style="width:100%;padding:6px 10px;border-radius:8px;border:1px solid var(--sep);background:var(--surface);font-size:12px;color:var(--text);margin-bottom:6px">
-      <option value="primary">小学（1-6年级）</option>
-      <option value="junior">初中（7-9年级）</option>
-      <option value="senior">高中（高一~高三）</option>
-    </select>
-    <div style="display:flex;align-items:center;gap:6px;font-size:11px;margin-top:4px">
-      <span>大学拓展</span>
-      <label style="position:relative;display:inline-block;width:36px;height:20px">
-        <input type="checkbox" id="extend-toggle" onchange="onExtendToggle()" style="opacity:0;width:0;height:0">
-        <span id="extend-toggle-bg" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#cbd5e1;border-radius:20px;transition:.3s"></span>
-        <span id="extend-toggle-dot" style="position:absolute;height:16px;width:16px;left:2px;bottom:2px;background:white;border-radius:50%;transition:.3s"></span>
-      </label>
-    </div>
-  </div>
-  <div class="side-section">
-    <h4>知识库 <span style="font-size:10px;color:var(--text2)">RAG</span></h4>
-    <div id="kb-status" style="font-size:11px;color:var(--text2);margin-bottom:6px">加载中...</div>
-    <button class="top-btn" onclick="openKbManager()" style="width:100%;margin-bottom:4px">管理知识库</button>
-    <div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px">
-      <span>RAG增强</span>
-      <label style="position:relative;display:inline-block;width:36px;height:20px">
-        <input type="checkbox" id="rag-toggle" onchange="toggleRag()" style="opacity:0;width:0;height:0">
-        <span style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#cbd5e1;border-radius:20px;transition:.3s" id="rag-toggle-bg"></span>
-        <span style="position:absolute;content:'';height:16px;width:16px;left:2px;bottom:2px;background:white;border-radius:50%;transition:.3s" id="rag-toggle-dot"></span>
-      </label>
-    </div>
-  </div>
-  <div class="side-section">
-    <h4>错题本 <span style="font-size:10px;color:var(--text2)">(本地存储)</span></h4>
-    <div id="error-list"></div>
-  </div>
-</div>
-
-<!-- 主区域 -->
-<div id="main-area">
-<div id="top-bar">
-  <h1>苏巷雨 · 智慧教学智能体</h1>
-  <div class="top-btns">
-    <select id="provider-sel" class="model-sel" onchange="onProviderChange()"></select>
-    <select id="model-sel" class="model-sel" onchange="saveCurrentConfig()"></select>
-    <span class="model-name" id="current-model-label"></span>
-    <span class="math-badge" id="grade-badge">初中</span>
-    <button class="top-btn" onclick="toggleTheme()" id="theme-btn">深色模式</button>
-    <button class="top-btn" onclick="clearConversation()">清空</button>
-    <button class="top-btn" onclick="openSettings()">API Key</button>
-    <button class="top-btn" onclick="openModelConfig()">模型</button>
-  </div>
-</div>
-
-<div id="chat-list"></div>
-
-<button id="fav-btn" onclick="saveToErrorBook()">收藏到错题本</button>
-<button id="back-btn" onclick="scrollToBottom()">回到底部</button>
-
-<div id="input-area">
-  <div id="formula-bar">
-    <button onclick="insertFormula('$$','$$')" title="块级公式">公式块</button>
-    <button onclick="insertFormula('$','$')" title="行内公式">fx 行内</button>
-    <button onclick="insertFormula('\\frac{','}{}')" title="分数">⅔ 分数</button>
-    <button onclick="insertFormula('\\sqrt{','}')" title="根号">√ 根号</button>
-    <button onclick="insertFormula('x^{','}')" title="上标">x² 幂</button>
-    <button onclick="insertFormula('\\int_{','}^{}')" title="积分">∫ 积分</button>
-    <button onclick="insertFormula('\\sum_{','}^{}')" title="求和">Σ 求和</button>
-    <button onclick="insertFormula('\\lim_{','}')" title="极限">lim 极限</button>
-    <button onclick="insertFormula('\\angle ','')" title="角">∠ 角</button>
-    <button onclick="insertFormula('\\triangle ','')" title="三角形">△ 三角</button>
-    <button onclick="insertFormula('\\pi','')" title="圆周率">π</button>
-  </div>
-  <div id="quick-bar">
-    <button onclick="appendCommand('请分步详细解这道题，标注每一步的公式和定理')" class="math-action"> 分步详细解</button>
-    <button onclick="appendCommand('请标注这道题的易错点和常见错误')" class="math-action"> 标注易错点</button>
-    <button onclick="appendCommand('请生成1道同类变式练习题，并给出解答')" class="math-action">生成变式题</button>
-    <button onclick="appendCommand('请总结这类题目的通用解题方法和套路')" class="math-action">总结解题方法</button>
-    <button onclick="appendCommand('请梳理本题涉及的所有知识点，并标注对应的课本考点')">梳理知识点</button>
-  </div>
-  <div id="input-row">
-    <textarea id="input-box" rows="1"></textarea>
-    <button id="send-btn" onclick="sendMessage()">发送</button>
-    <button id="stop-btn" onclick="stopGeneration()">停止</button>
-  </div>
-  <div id="status">就绪 — 苏巷雨智慧教学智能体 · 选择模型开始辅导</div>
-</div>
-</div></div>
-
-<div id="toast"></div>
-
-<div id="settings-overlay" onclick="if(event.target===this)closeSettings()">
-<div id="settings-dialog"><h3>配置 API Key</h3>
-<label>当前厂商</label><p id="cfg-provider-name" style="font-weight:600;margin-bottom:8px"></p>
-<label>API Key</label><input id="cfg-apikey" type="password" placeholder="sk-...">
-<label>自定义 Base URL (可选)</label><input id="cfg-baseurl" placeholder="https://api.deepseek.com/v1">
-<p style="font-size:12px;color:var(--text2);margin-top:8px">推荐数理推理模型：DeepSeek-R1 / GLM-5.2 / Kimi K2.6 / Qwen-Max</p>
-<div class="btn-row"><button class="btn-cancel" onclick="closeSettings()">取消</button><button class="btn-save" onclick="saveSettings()">保存</button></div>
-</div></div>
-
-<div id="model-config-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.4);z-index:100;justify-content:center;align-items:center" onclick="if(event.target===this)closeModelConfig()">
-<div id="settings-dialog"><h3>多模型配置管理</h3>
-<div id="config-list" style="max-height:400px;overflow-y:auto"></div>
-<div class="btn-row"><button class="btn-cancel" onclick="closeModelConfig()">关闭</button></div></div></div>
-
-<!-- 知识库管理弹窗 -->
-<div id="kb-overlay" onclick="if(event.target===this)closeKbManager()">
-<div id="settings-dialog" style="width:540px">
-  <h3>知识库管理 (RAG)</h3>
-  <div id="kb-stats-panel" class="kb-stats"></div>
-  <p style="font-size:12px;color:var(--text2);margin-bottom:8px">
-    可直接上传 PDF 自动索引；也可将 PDF 放入知识库目录后点击"批量索引"。<br>
-    知识库目录：<code id="kb-dir-path" style="font-size:11px;background:var(--primary-bg);padding:2px 6px;border-radius:4px">加载中...</code>
-  </p>
-  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-    <button class="top-btn" onclick="refreshKbFileList()">刷新列表</button>
-    <button class="top-btn" onclick="buildKbIndex()" style="background:var(--primary);color:#fff;border-color:var(--primary)">批量索引</button>
-    <button class="top-btn" onclick="buildKbIncremental()">增量索引</button>
-    <button class="top-btn" onclick="retryFailedWithOcr()" style="background:#fef3c7;color:#92400e;border-color:#fcd34d">重试OCR</button>
-    <button class="top-btn" onclick="configMathPix()" style="background:#e0e7ff;color:#3730a3;border-color:#c7d2fe">MathPix</button>
-    <button class="top-btn" onclick="resetKbCheckpoint()">重置断点</button>
-    <button class="top-btn" onclick="loadFailedFiles()">失败清单</button>
-  </div>
-  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
-    <input type="file" id="kb-upload-input" accept=".pdf,application/pdf" multiple style="display:none"
-           onchange="document.getElementById('kb-upload-label').textContent='已选 '+this.files.length+' 个文件'">
-    <button class="top-btn" onclick="document.getElementById('kb-upload-input').click()">选择PDF文件</button>
-    <button class="top-btn" onclick="uploadKbFiles()" style="background:var(--primary);color:#fff;border-color:var(--primary)">上传并索引</button>
-    <span id="kb-upload-label" style="font-size:11px;color:var(--text2)"></span>
-  </div>
-  <div id="kb-file-list" style="max-height:200px;overflow-y:auto;margin-bottom:12px"></div>
-  <div style="display:flex;gap:8px;margin-bottom:8px">
-    <select id="kb-stage-sel" style="padding:6px 12px;border-radius:8px;border:1px solid var(--sep);background:var(--surface2);font-size:12px">
-      <option value="">自动识别学段（按目录路径）</option>
-      <option value="primary">小学</option>
-      <option value="junior">初中</option>
-      <option value="senior">高中</option>
-      <option value="university">大学拓展</option>
-    </select>
-  </div>
-  <div id="kb-build-log" style="font-size:11px;color:var(--text2);max-height:100px;overflow-y:auto;background:var(--surface2);padding:8px;border-radius:8px;display:none"></div>
-  <div id="kb-progress-bar" style="display:none;margin:8px 0;height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden">
-    <div id="kb-progress-fill" style="height:100%;background:var(--primary);width:0%;transition:width .3s"></div>
-  </div>
-  <div id="kb-progress-text" style="display:none;font-size:11px;color:var(--text2);text-align:center"></div>
-  <div id="kb-failed-list" style="display:none;max-height:150px;overflow-y:auto;margin:8px 0;font-size:11px"></div>
-  <div class="btn-row">
-    <button class="top-btn" onclick="clearKb()" style="color:#ef4444">清空知识库</button>
-    <button class="btn-cancel" onclick="closeKbManager()">关闭</button>
-  </div>
-</div></div>
-
-<script>
-// ===== 全局状态 =====
-let chatList=document.getElementById('chat-list'),inputBox=document.getElementById('input-box');
-let sendBtn=document.getElementById('send-btn'),stopBtn=document.getElementById('stop-btn');
-let backBtn=document.getElementById('back-btn'),statusEl=document.getElementById('status');
-let favBtn=document.getElementById('fav-btn');
-let isLoading=false,currentAbort=null,userScrolledUp=false,sessionId='',isDark=false;
-let currentStage='junior'; // 学段
-let allowExtend=false;       // 是否允许大学拓展
-let lastAiFullText=''; // 最后一条AI完整回答
-let providers=[],currentConfig={provider:'deepseek',modelName:'deepseek-chat',apiKey:'',baseUrl:'https://api.deepseek.com/v1',temperature:0.2,maxTokens:4096};
-let savedConfigs={},sidebarOpen=true;
-let currentDbSessionId=null; // 当前数据库会话ID
-
-// ===== 学段管理 =====
-function onStageChange(){
-  let sel=document.getElementById('stage-sel');
-  currentStage=sel.value;
-  localStorage.setItem('mathStage',currentStage);
-  document.getElementById('grade-badge').textContent=getStageLabel(currentStage);
-  updateExtendToggleState();
-  updateQuickBar();
-}
-function onExtendToggle(){
-  allowExtend=!allowExtend;
-  localStorage.setItem('allowExtend',allowExtend?'1':'0');
-  updateExtendToggleStyle();
-  updateQuickBar();
-}
-function updateExtendToggleState(){
-  // 只有高中模式才启用大学拓展开关
-  let toggle=document.getElementById('extend-toggle');
-  let canExtend=currentStage==='senior';
-  toggle.disabled=!canExtend;
-  if(!canExtend){allowExtend=false;toggle.checked=false}
-  updateExtendToggleStyle();
-}
-function updateExtendToggleStyle(){
-  let on=document.getElementById('extend-toggle').checked;
-  document.getElementById('extend-toggle-bg').style.background=on?'var(--accent)':'#cbd5e1';
-  document.getElementById('extend-toggle-dot').style.transform=on?'translateX(16px)':'translateX(0)';
-}
-function getStage(){return currentStage}
-function getStageLabel(s){
-  if(s==='primary')return '小学';
-  if(s==='junior')return '初中';
-  if(s==='senior')return '高中';
-  if(s==='university')return '大学拓展';
-  return s||'';
-}
-
-// ===== 侧边栏 =====
-function toggleSidebar(){
-  sidebarOpen=!sidebarOpen;
-  document.getElementById('sidebar').classList.toggle('collapsed',!sidebarOpen);
-  document.getElementById('sidebar-toggle').textContent='教学工具';
-  localStorage.setItem('sidebarOpen',sidebarOpen?'1':'0');
-}
-
-// ===== 错题本 =====
-function getErrorBook(){
-  try{return JSON.parse(localStorage.getItem('mathErrorBook')||'[]')}catch(e){return[]}
-}
-function saveErrorBook(book){localStorage.setItem('mathErrorBook',JSON.stringify(book))}
-function saveToErrorBook(){
-  if(!lastAiFullText){showToast('暂无AI回答可收藏');return}
-  let userMsg=chatList.querySelectorAll('.row.user .bubble');
-  let question='';
-  if(userMsg.length>0)question=userMsg[userMsg.length-1].textContent.substring(0,100);
-  let book=getErrorBook();
-  book.unshift({question:question,answer:lastAiFullText,time:new Date().toLocaleString('zh-CN'),stage:getStage()});
-  if(book.length>50)book.length=50;
-  saveErrorBook(book);
-  renderErrorBook();
-  showToast('已收藏到错题本');
-}
-function deleteError(idx){
-  let book=getErrorBook();book.splice(idx,1);saveErrorBook(book);renderErrorBook();
-}
-function renderErrorBook(){
-  let list=document.getElementById('error-list'),book=getErrorBook();
-  if(!book.length){list.innerHTML='<div class="empty-hint">暂无错题<br>点击AI回答旁的「收藏到错题本」按钮保存</div>';return}
-  list.innerHTML=book.map((e,i)=>'<div class="error-item" onclick="loadErrorItem('+i+')"><span class="eq">'+escapeHtml(e.question||'(无题干)')+'</span><span class="em">'+getStageLabel(e.stage||'')+' · '+e.time+'</span><span class="error-del" onclick="event.stopPropagation();deleteError('+i+')">删除</span></div>').join('');
-}
-function loadErrorItem(idx){
-  let book=getErrorBook();if(!book[idx])return;
-  let item=book[idx];
-  if(item.question){addMessage(item.question,'user')}
-  addMessage(item.answer,'ai');
-  lastAiFullText=item.answer;
-  favBtn.style.display='block';
-  scrollToBottom();
-}
-function escapeHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-
-/**
- * 净化将要写入 innerHTML 的 HTML。
- * AI 回答会经过 marked 渲染，而 marked 默认不清理 HTML；知识库内容又可能
- * 来自爬取的网页，因此模型有机会回显恶意标签 → XSS → 偷走 localStorage
- * 里的各家 API Key。这里统一用 DOMPurify 过滤。
- * 保留 mathMl/svg：KaTeX 的公式输出依赖它们，不能裁掉。
- */
-function sanitizeHtml(html){
-  if(typeof DOMPurify==='undefined')return html;  // 兜底：库未加载时保持原行为
-  try{
-    return DOMPurify.sanitize(html,{USE_PROFILES:{html:true,mathMl:true,svg:true}});
-  }catch(e){return html}
-}
-
-// ===== 主题 =====
-function toggleTheme(){isDark=!isDark;document.body.classList.toggle('light',!isDark);document.getElementById('theme-btn').textContent=isDark?'浅色模式':'深色模式';localStorage.setItem('theme',isDark?'dark':'light')}
-if(localStorage.getItem('theme')==='light'){isDark=false;document.body.classList.add('light');document.getElementById('theme-btn').textContent='深色模式'}
-else{isDark=true;document.body.classList.remove('light');document.getElementById('theme-btn').textContent='浅色模式'}
-
-// ===== 模型配置 =====
-async function loadProviders(){
-  try{let r=await fetch('/api/providers');providers=await r.json();
-  let sel=document.getElementById('provider-sel');sel.innerHTML='';
-  providers.forEach(p=>{let o=document.createElement('option');o.value=p.provider;o.textContent=p.providerName;sel.appendChild(o)});
-  loadLocalConfigs();}catch(e){console.error(e)}
-}
-function loadLocalConfigs(){
-  try{let raw=localStorage.getItem('modelConfigs');if(raw)savedConfigs=JSON.parse(raw)}
-  catch(e){savedConfigs={}}
-  let last=localStorage.getItem('lastProvider');
-  if(last&&savedConfigs[last]){
-    currentConfig=savedConfigs[last];
-    if(!currentConfig.temperature)currentConfig.temperature=0.2;
-  }
-  applyCurrentConfig();
-}
-function saveConfigs(){localStorage.setItem('modelConfigs',JSON.stringify(savedConfigs))}
-function applyCurrentConfig(){
-  let p=currentConfig.provider;document.getElementById('provider-sel').value=p;
-  localStorage.setItem('lastProvider',p);
-  onProviderChange(false);
-  updateModelLabel();
-}
-function onProviderChange(save=true){
-  let p=document.getElementById('provider-sel').value;
-  let prov=providers.find(x=>x.provider===p);
-  if(save){
-    currentConfig.provider=p;
-    currentConfig.baseUrl=prov?prov.baseUrl:'';
-    if(savedConfigs[p]&&savedConfigs[p].apiKey)currentConfig.apiKey=savedConfigs[p].apiKey;
-    else currentConfig.apiKey='';
-    currentConfig.modelName=prov&&prov.modelOptions.length?prov.modelOptions[0].value:'';
-    if(!currentConfig.temperature)currentConfig.temperature=0.2;
-    saveCurrentConfig();
-  }
-  let sel=document.getElementById('model-sel');sel.innerHTML='';
-  if(prov){prov.modelOptions.forEach(m=>{let o=document.createElement('option');o.value=m.value;o.textContent=m.label;sel.appendChild(o)})}
-  sel.value=currentConfig.modelName||(prov?prov.modelOptions[0].value:'');
-  updateModelLabel();
-}
-function saveCurrentConfig(){
-  let p=document.getElementById('provider-sel').value;
-  let m=document.getElementById('model-sel').value;
-  currentConfig.provider=p;currentConfig.modelName=m;
-  if(!currentConfig.temperature)currentConfig.temperature=0.2;
-  savedConfigs[p]=Object.assign({},currentConfig);
-  saveConfigs();updateModelLabel();
-}
-function updateModelLabel(){
-  let p=providers.find(x=>x.provider===currentConfig.provider);
-  let reasoningModels=['deepseek-r1','glm-5.2','kimi-k2.6','kimi-k2.5','qwen3.7-max'];
-  let isReasoning=reasoningModels.includes(currentConfig.modelName);
-  document.getElementById('current-model-label').textContent=(p?p.providerName:'')+' / '+currentConfig.modelName+(isReasoning?' · 优选':'');
-}
-document.getElementById('model-sel').addEventListener('change',saveCurrentConfig);
-
-// ===== 会话 =====
-async function initSession(){
-  try{
-    // 复用已有 sid cookie（会话归属标识，刷新后保持不变），没有才创建
-    let sidMatch=document.cookie.match(/(?:^|;\s*)sid=([^;]+)/);
-    sessionId=sidMatch?sidMatch[1]:'';
-    if(!sessionId){
-      let r=await fetch('/api/session');let d=await r.json();
-      sessionId=d.sid;document.cookie='sid='+sessionId+';path=/';
-    }
-    // 刷新后从数据库恢复上次会话（数据库是上下文的唯一来源）
-    if(currentDbSessionId){
-      try{
-        let r=await fetch('/api/history/messages/'+currentDbSessionId);
-        let ms=await r.json();
-        if(ms.length>0){
-          ms.forEach(m=>{if(m.role==='user')addMessage(m.content,'user');else if(m.role==='assistant')addMessage(m.content,'ai',m.thinkRaw||null)});
-        }
-      }catch(_){}
-    }
-  }catch(_){}
-}
-
-// ===== 消息渲染 =====
-function addMessage(text,sender){
-  let w=document.querySelector('.welcome-card');if(w)w.remove();
-  let row=document.createElement('div');row.className='row '+sender;
-  let bubble=document.createElement('div');bubble.className='bubble';
-  if(sender==='ai')bubble.innerHTML=sanitizeHtml(marked.parse(renderLatex(text)));
-  else if(sender==='system')bubble.innerHTML=escapeHtml(text);
-  else bubble.textContent=text;
-  let time=document.createElement('div');time.className='time-stamp';time.textContent=new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
-  row.appendChild(time);row.appendChild(bubble);chatList.appendChild(row);
-  if(!userScrolledUp)scrollToBottom();
-  if(sender==='ai'){lastAiFullText=text;favBtn.style.display='block'}
-}
-function addLoading(){let w=document.querySelector('.welcome-card');if(w)w.remove();let row=document.createElement('div');row.className='row ai';row.id='loading-msg';let b=document.createElement('div');b.className='bubble loading-dots';b.textContent='思考中';let d=document.createElement('span');['.','.','.'].forEach(()=>{let s=document.createElement('span');s.className='dot';s.textContent='.';d.appendChild(s)});b.appendChild(d);row.appendChild(b);chatList.appendChild(row);if(!userScrolledUp)scrollToBottom()}
-function removeLoading(){let e=document.getElementById('loading-msg');if(e) e.remove()}
-function addAiBubble(){let old=document.getElementById('ai-stream');if(old)old.removeAttribute('id');let row=document.createElement('div');row.className='row ai';row.id='ai-stream';let b=document.createElement('div');b.className='bubble';row.appendChild(b);chatList.appendChild(row)}
-function updateAiBubble(text){
-  _doRender(text,false);
-}
-function _doRender(text,isFinal){
-  var row=document.getElementById('ai-stream');if(!row)return;
-  var rendered=renderLatex(text,isFinal);
-  var bubble=row.querySelector('.bubble');
-  // 只重绘答案区域，保留思考面板 DOM 不被清掉
-  var target=bubble.querySelector('#answer-block')||bubble;
-  target.innerHTML=sanitizeHtml(marked.parse(rendered));
-  if(!userScrolledUp)debounceScroll();
-}
-function updateAiBubbleFinal(text){
-  _doRender(text,true);
-  if(!userScrolledUp)scrollToBottom();
-}
-var _scrollTimer=null;
-function debounceScroll(){
-  if(_scrollTimer)return;
-  _scrollTimer=setTimeout(function(){scrollToBottom();_scrollTimer=null},120);
-}
-function safeText(v){return typeof v==='string'?v:(v===null||v===undefined)?'':String(v)}
-var RENDER_BLOCK_MAX_INLINE_LEN=80; // 短于此长度的 $$ 块在段落中转行内
-
-/** 清洗AI响应中泄漏的KaTeX HTML标签，还原为纯文本 */
-function cleanLeakedHtml(text){
-  text=text.replace(/<span[^>]*class="katex[^"]*"[^>]*>/g,'');
-  text=text.replace(/<\/span>/g,'');
-  text=text.replace(/<math[^>]*>/g,'');
-  text=text.replace(/<\/math>/g,'');
-  text=text.replace(/<semantics>[^<]*<\/semantics>/g,'');
-  text=text.replace(/<annotation[^>]*>[\s\S]*?<\/annotation>/g,'');
-  text=text.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
-  return text;
-}
-
-/** 兜底修复AI流式输出造成的破碎LaTeX */
-function cleanLatexText(rawText){
-  var text=rawText;
-  // 移除非标准换行导致的分数分裂：把 $$ 块内的多余换行合并
-  text=text.replace(/\$\$([\s\S]*?)\$\$/g,function(m,inner){
-    // 公式内部换行 → 保留一个换行（多行公式如align），把连续多个空行压缩
-    var cleaned=inner.replace(/\n{3,}/g,'\n\n').replace(/[ \t]+$/gm,'');
-    // 如果内容不含 \\ 对齐符且不含 \begin，把换行去掉让\frac写一行
-    if(!/\\\\/.test(cleaned)&&!/\\begin/.test(cleaned)){
-      cleaned=cleaned.replace(/\n+/g,' ');
-    }
-    return '$$'+cleaned+'$$';
-  });
-  // 清除AI常输出的零宽字符/不可见字符
-  text=text.replace(/[​‌‍‎‏﻿]/g,'');
-  // 修复下标空格：a 1 → a_1, a n → a_n, a n+1 → a_{n+1}
-  text=text.replace(/\b(a|b|c|x|y|z|S|P|A|B|C|t|r)\s+(\d+)\b/g,'$1_$2');
-  text=text.replace(/\b(a|b|c|x|y|z|S|P|A|B|C|t|r)\s+(n)(\W|$)/g,'$1_n$3');
-  // 修复全角空格
-  text=text.replace(/　/g,' ');
-  // \[...\] → $$...$$（AI可能不听提示词）
-  text=text.replace(/\\\[([\s\S]*?)\\\]/g,'$$$$$1$$$$');
-  text=text.replace(/\\\(([\s\S]*?)\\\)/g,'$$1$');
-  return text;
-}
-
-function renderLatex(text,isFinal){
-  text=safeText(text);
-  if(typeof katex==='undefined')return text;
-  // 清洗：HTML标签 → 破碎LaTeX修复 → 分隔符统一
-  text=cleanLeakedHtml(text);
-  text=cleanLatexText(text);
-
-  // 先处理 $...$ 行内公式（必须在 $$ 之前，避免把 $$ 内容误匹配）
-  text=text.replace(/(?<!\$)\$([^\$\n]+?)\$(?!\$)/g,(m,f)=>{
-    try{return katex.renderToString(f.trim(),{displayMode:false,throwOnError:false,trust:true,strict:false})}catch(e){return m}
-  });
-
-  // 智能处理 $$...$$：短公式在段落中转行内，长公式保持块级
-  text=text.replace(/\$\$([\s\S]*?)\$\$/g,(m,f)=>{
-    var inner=f.trim();
-    // 包含换行 → 多行公式，保持块级
-    if(/\n/.test(inner)){
-      try{return katex.renderToString(inner,{displayMode:true,throwOnError:false,trust:true,strict:false})}catch(e){return m}
-    }
-    // 短公式 且 不在独立行 → 渲染为行内
-    if(inner.length<RENDER_BLOCK_MAX_INLINE_LEN){
-      try{return katex.renderToString(inner,{displayMode:false,throwOnError:false,trust:true,strict:false})}catch(e){return m}
-    }
-    // 长公式 → 块级
-    try{return katex.renderToString(inner,{displayMode:true,throwOnError:false,trust:true,strict:false})}catch(e){return m}
-  });
-
-  // 流式过程中：如果还有未闭合的 $$，临时隐藏
-  if(!isFinal){
-    var openIdx=text.indexOf('$$');
-    if(openIdx>=0&&text.indexOf('$$',openIdx+2)<0){
-      text=text.substring(0,openIdx)+'<span class="katex-pending">$$</span>';
-    }
-  }else{
-    // 最终渲染：兜底自动包裹裸LaTeX
-    text=autoWrapBareLatex(text);
-    // 清除残留的未闭合 $$
-    text=text.replace(/\$\$/g,'');
-  }
-  return text;
-}
-
-/** 自动将裸数学表达式包裹为行内 $...$ */
-function autoWrapBareLatex(text){
-  // 逐个匹配处理，不在顶层检查全文本中是否已有 katex
-  text=text.replace(/(\\(?:frac|sqrt|sum|int|lim|infty|pm|mp|times|div|cdot|leq|geq|neq|approx|equiv|sim|partial|nabla|forall|exists|in|notin|subset|subseteq|cup|cap|angle|triangle|alpha|beta|gamma|delta|epsilon|theta|lambda|mu|pi|sigma|omega|mathbf|mathbb|mathcal|bar|hat|vec|dot|widetilde|widehat|overline|underline|operatorname|text|begin|end|left|right)\b[^\n$<>]*)/g,
-  function(m){
-    if(/<span|<div|class="katex/.test(m))return m;
-    try{return katex.renderToString(m.trim(),{displayMode:false,throwOnError:false,trust:true,strict:false})}catch(e){return m}
-  });
-  // 导数 f'(x) 模式
-  text=text.replace(/([a-zA-Z]\\?'{1,2}\([^)]*\)(?:\s*=\s*[^\n$<>]+)?)/g,function(m){
-    if(/<span|<div|class="katex/.test(m))return m;
-    try{return katex.renderToString(m.trim(),{displayMode:false,throwOnError:false,trust:true,strict:false})}catch(e){return m}
-  });
-  return text;
-}
-function showToast(msg){let t=document.getElementById('toast');t.textContent=msg;t.style.opacity='1';setTimeout(()=>t.style.opacity='0',1500)}
-
-// ===== 公式插入 =====
-function insertFormula(prefix,suffix){
-  let box=inputBox,start=box.selectionStart,end=box.selectionEnd;
-  let sel=box.value.substring(start,end)||'...';
-  box.value=box.value.substring(0,start)+prefix+sel+suffix+box.value.substring(end);
-  box.focus();box.selectionStart=start+prefix.length;box.selectionEnd=start+prefix.length+sel.length;
-}
-
-// ===== 发送 =====
-function appendCommand(cmd){
-  let text=inputBox.value.trim();
-  inputBox.value=text?text+'。'+cmd:cmd;
-  inputBox.focus();inputBox.dispatchEvent(new Event('input'));
-}
-async function sendMessage(){
-  if(isLoading){stopGeneration();return}
-  let text=inputBox.value.trim();if(!text)return;
-  if(!currentConfig.apiKey){openSettings();return}
-  // 新一轮生成前重置平滑打字机，避免把上一轮答案残留在新气泡中
-  _clearSmoother();
-  // 无会话时自动创建
-  if(!currentDbSessionId){
-    try{
-      let r=await fetch('/api/history/session/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:text,stage:getStage(),modelName:currentConfig.modelName||''})});
-      let d=await r.json();currentDbSessionId=d.sessionId;
-      localStorage.setItem('currentDbSessionId',currentDbSessionId);
-      loadSessionList();
-    }catch(e){}
-  }
-  addMessage(text,'user');inputBox.value='';inputBox.style.height='auto';inputBox.focus();
-  addLoading();setLoading(true);let aiText="";thinkText="";lastAiFullText="";lastThinkFullText="";favBtn.style.display='none';
-  try{
-    currentAbort=new AbortController();
-    let body={provider:currentConfig.provider,modelName:currentConfig.modelName,apiKey:currentConfig.apiKey,baseUrl:currentConfig.baseUrl,temperature:currentConfig.temperature||0.2,maxTokens:currentConfig.maxTokens||4096,stage:getStage(),allowUniversityExtend:allowExtend,ragEnabled:ragEnabled,ragTopK:4,sessionId:currentDbSessionId,messages:[{role:'user',content:text}]};
-    let resp=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:currentAbort.signal});
-    // 保持loading，等首个答案分片到达再移除
-    var _bubbleReady=false;
-    let reader=resp.body.getReader(),decoder=new TextDecoder(),buffer='',currentEvent='',eventLines=[];
-    while(true){
-      let{done,value}=await reader.read();
-      if(done){
-        if(currentEvent==='chunk'&&eventLines.length>0){
-          try{let o=JSON.parse(eventLines.join('\n'));if(o.type==='chunk'){if(!_bubbleReady){removeLoading();addAiBubble();_bubbleReady=true};aiText+=o.content||'';_feedSmooth(o.content||'')}else if(o.type==='error'){updateAiBubble('[错误] '+o.errMsg)}}
-          catch(e){aiText+=eventLines.join('\n');updateAiBubble(aiText)}
-        }else if(currentEvent==='reasoning'&&eventLines.length>0){
-          try{let o=JSON.parse(eventLines.join('\n'));if(o.reasoning){thinkText+=o.reasoning;updateThinkPanel(thinkText)}}
-          catch(e){}
-        }
-        break;
-      }
-      buffer+=decoder.decode(value,{stream:true});let lines=buffer.split('\n');buffer=lines.pop();
-      for(let line of lines){
-        if(line===''){
-          if(currentEvent==='chunk'&&eventLines.length>0){
-            try{let o=JSON.parse(eventLines.join('\n'));if(o.type==='chunk'){if(!_bubbleReady){removeLoading();addAiBubble();_bubbleReady=true};aiText+=o.content||'';_feedSmooth(o.content||'')}else if(o.type==='error'){updateAiBubble('[错误] '+o.errMsg)}}
-            catch(e){aiText+=eventLines.join('\n');updateAiBubble(aiText)}
-          }else if(currentEvent==='reasoning'&&eventLines.length>0){
-            try{let o=JSON.parse(eventLines.join('\n'));if(o.reasoning){thinkText+=o.reasoning;updateThinkPanel(thinkText)}}
-            catch(e){}
-            var lb=document.getElementById('loading-msg');if(lb)lb.querySelector('.bubble').innerHTML='深度思考中<span><span class=dot>.</span><span class=dot>.</span><span class=dot>.</span></span>';
-          }else if(currentEvent==='finish'){
-            setLoading(false);statusEl.textContent='回答完成';
-            lastAiFullText=aiText;favBtn.style.display='block';
-            // 流结束：全量渲染一次（自动包裹未标记公式 + 清理未闭合 $$）
-            aiText=_flushSmooth();updateAiBubbleFinal(aiText);
-            try{if(eventLines.length>0){let o=JSON.parse(eventLines.join('\n'));if(o.fullContent)lastAiFullText=o.fullContent;if(o.fullReasoning)lastThinkFullText=o.fullReasoning}}
-            catch(e){}
-            // 刷新历史列表（更新时间和标题）
-            if(currentDbSessionId)loadSessionList();
-          }
-          currentEvent='';eventLines=[];
-        }else if(line.startsWith('event:'))currentEvent=line.substring(6).trim();
-        else if(line.startsWith('data:'))eventLines.push(line.substring(5));
-      }
-    }
-  }catch(e){
-    if(e.name==='AbortError'){removeLoading();if(!aiText){addAiBubble();updateAiBubble('[已停止]')}}
-    else{removeLoading();addAiBubble();updateAiBubble('[错误] '+e.message)}
-  }finally{currentAbort=null;setLoading(false);if(statusEl.textContent!=='回答完成')statusEl.textContent='就绪'}
-}
-function stopGeneration(){if(currentAbort){currentAbort.abort();currentAbort=null}_clearSmoother();setLoading(false);statusEl.textContent='已停止'}
-
-// ===== 流式平滑打字机 =====
-var _smoothBuf='',_smoothTimer=null,_smoothText='',_smoothSpeed=30,_smoothStarted=false;
-function _feedSmooth(chunk){
-  _smoothBuf+=chunk;
-  // 首个分片立即展示，消除等待感；后续平滑输出
-  if(!_smoothStarted){_smoothStarted=true;_smoothSpeed=30}
-  if(!_smoothTimer)_smoothTimer=setInterval(_tickSmooth,_smoothSpeed);
-}
-function _tickSmooth(){
-  if(_smoothBuf.length===0){clearInterval(_smoothTimer);_smoothTimer=null;return}
-  // 缓冲区积压超过200字时加速输出，避免越等越多
-  var n=_smoothBuf.length>200?Math.min(20,_smoothBuf.length):Math.min(8,_smoothBuf.length);
-  _smoothText+=_smoothBuf.slice(0,n);
-  _smoothBuf=_smoothBuf.slice(n);
-  _doRender(_smoothText,false);
-}
-function _flushSmooth(){
-  if(_smoothTimer){clearInterval(_smoothTimer);_smoothTimer=null}
-  if(_smoothBuf.length>0){_smoothText+=_smoothBuf;_smoothBuf=''}
-  return _smoothText;
-}
-function _clearSmoother(){
-  if(_smoothTimer){clearInterval(_smoothTimer);_smoothTimer=null}
-  _smoothBuf='';_smoothText='';_smoothStarted=false;
-}
-function setLoading(v){isLoading=v;sendBtn.style.display=v?'none':'';stopBtn.style.display=v?'':'none';if(v)statusEl.textContent='AI思考中...';favBtn.style.display='none'}
-function clearConversation(){
-  stopGeneration();
-  fetch('/api/chat',{method:'DELETE'});
-  chatList.innerHTML=buildWelcomeCard();
-  // 重置会话ID：下一条消息会自动创建全新会话，保证上下文干净
-  currentDbSessionId=null;
-  localStorage.removeItem('currentDbSessionId');
-  inputBox.value='';inputBox.focus();statusEl.textContent='已清空';lastAiFullText='';favBtn.style.display='none';
-}
-
-// ===== 滚动 =====
-chatList.addEventListener('scroll',()=>{let atBottom=chatList.scrollHeight-chatList.scrollTop-chatList.clientHeight<80;userScrolledUp=!atBottom;backBtn.style.display=userScrolledUp?'block':'none'});
-function scrollToBottom(){chatList.scrollTop=chatList.scrollHeight;userScrolledUp=false;backBtn.style.display='none'}
-document.addEventListener('keydown',e=>{if(e.key==='Escape')inputBox.focus()});
-inputBox.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});
-inputBox.addEventListener('input',()=>{inputBox.style.height='auto';inputBox.style.height=Math.min(inputBox.scrollHeight,120)+'px'});
-
-// ===== 设置对话框 =====
-function openSettings(){
-  let p=providers.find(x=>x.provider===currentConfig.provider);
-  document.getElementById('cfg-provider-name').textContent=(p?p.providerName:'')+' ('+currentConfig.provider+')';
-  document.getElementById('cfg-apikey').value=currentConfig.apiKey||'';
-  document.getElementById('cfg-baseurl').value=currentConfig.baseUrl||(p?p.baseUrl:'');
-  document.getElementById('settings-overlay').style.display='flex';
-}
-function closeSettings(){document.getElementById('settings-overlay').style.display='none'}
-function saveSettings(){
-  let apiKey=document.getElementById('cfg-apikey').value.trim();
-  let baseUrl=document.getElementById('cfg-baseurl').value.trim();
-  if(!apiKey){showToast('请输入API Key');return}
-  currentConfig.apiKey=apiKey;
-  currentConfig.baseUrl=baseUrl||currentConfig.baseUrl;
-  saveCurrentConfig();closeSettings();showToast('配置已保存');
-}
-function openModelConfig(){
-  let list=document.getElementById('config-list');list.innerHTML='';
-  let reasoningModels=['deepseek-r1','glm-5.2','kimi-k2.6','kimi-k2.5','qwen3.7-max'];
-  providers.forEach(p=>{
-    let cfg=savedConfigs[p.provider]||{apiKey:'',modelName:p.modelOptions[0]?.value||''};
-    if(!cfg.temperature)cfg.temperature=0.2;
-    let hasReasoning=p.modelOptions.some(m=>reasoningModels.includes(m.value));
-    let row=document.createElement('div');row.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--sep)';
-    let badge=hasReasoning?' <span style="font-size:10px;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:8px">推理优选</span>':'';
-    let info=document.createElement('div');info.innerHTML='<b>'+p.providerName+badge+'</b><br><small style="color:var(--text2)">'+p.provider+' / '+cfg.modelName+'</small>';
-    let keyStatus=cfg.apiKey?'<span style="color:var(--success)">已配置</span>':'<span style="color:red">未配置</span>';
-    let btn=document.createElement('button');btn.className='top-btn';btn.textContent='切换';
-    btn.onclick=()=>{currentConfig.provider=p.provider;currentConfig.modelName=cfg.modelName;currentConfig.apiKey=cfg.apiKey;currentConfig.baseUrl=cfg.baseUrl||p.baseUrl;currentConfig.temperature=cfg.temperature||0.2;savedConfigs[p.provider]=Object.assign({},currentConfig);saveConfigs();applyCurrentConfig();closeModelConfig();showToast('已切换至 '+p.providerName)};
-    row.appendChild(info);let s=document.createElement('span');s.innerHTML=keyStatus;row.appendChild(s);row.appendChild(btn);
-    list.appendChild(row);
-  });
-  document.getElementById('model-config-overlay').style.display='flex';
-}
-function closeModelConfig(){document.getElementById('model-config-overlay').style.display='none'}
-
-function buildWelcomeCard(){return ''}
-
-// ===== 动态快捷栏 =====
-function updateQuickBar(){
-  let bar=document.getElementById('quick-bar');
-  let stage=getStage();
-  let extend=allowExtend;
-  if(stage==='primary'){
-    bar.innerHTML='<button onclick="appendCommand(\'请分步详细讲解这道题，用生活化例子\')" class="math-action">分步讲解</button><button onclick="appendCommand(\'请用一个生活化的例子来解释\')" class="math-action">生活化举例</button><button onclick="appendCommand(\'请画图讲解这道题\')" class="math-action">画图讲解</button><button onclick="appendCommand(\'请出1道同类型的基础练习题\')" class="math-action">同类练习</button><button onclick="appendCommand(\'请提醒这道题的口算易错点\')">易错口算提醒</button>';
-  }else if(extend){
-    bar.innerHTML='<button onclick="appendCommand(\'请给出课内标准解法\')" class="math-action">课内标准解法</button><button onclick="appendCommand(\'请用大学数学知识推导拓展\')" class="math-action">大学拓展推导</button><button onclick="appendCommand(\'请出一题竞赛难度的同类题\')" class="math-action">竞赛同类难题</button><button onclick="appendCommand(\'请深挖这道题的底层数学原理\')" class="math-action">底层原理深挖</button><button onclick="appendCommand(\'请总结拓展知识点\')">拓展知识点总结</button>';
-  }else{
-    bar.innerHTML='<button onclick="appendCommand(\'请分步详细解这道题，标注每一步的公式和定理\')" class="math-action">分步详细解</button><button onclick="appendCommand(\'请标注这道题的易错点和常见错误\')" class="math-action">标注易错点</button><button onclick="appendCommand(\'请生成1道同类变式练习题，并给出解答\')" class="math-action">生成变式题</button><button onclick="appendCommand(\'请总结这类题目的通用解题方法和套路\')" class="math-action">总结解题方法</button><button onclick="appendCommand(\'请梳理本题涉及的所有知识点，并标注对应的课本考点\')">梳理知识点</button>';
-  }
-}
-// ===== 知识库管理 =====
-let ragEnabled=localStorage.getItem('ragEnabled')==='1';
-if(ragEnabled){document.getElementById('rag-toggle').checked=true;updateRagToggleStyle()}
-function toggleRag(){ragEnabled=!ragEnabled;localStorage.setItem('ragEnabled',ragEnabled?'1':'0');updateRagToggleStyle();updateKbStatus()}
-function updateRagToggleStyle(){
-  let on=document.getElementById('rag-toggle').checked;
-  document.getElementById('rag-toggle-bg').style.background=on?'var(--primary)':'#cbd5e1';
-  document.getElementById('rag-toggle-dot').style.transform=on?'translateX(16px)':'translateX(0)';
-}
-async function updateKbStatus(){
-  try{let r=await fetch('/api/knowledge/stats');let s=await r.json();
-    document.getElementById('kb-status').innerHTML=s.totalChunks+' 切片 / '+s.totalDocuments+' 文档'+(ragEnabled?' <span style="color:var(--primary)">RAG开</span>':'');
-  }catch(e){document.getElementById('kb-status').textContent='服务未就绪'}
-}
-async function openKbManager(){
-  document.getElementById('kb-overlay').style.display='flex';
-  await refreshKbFileList();
-  await refreshKbStats();
-  // 加载知识库目录
-  try{let r=await fetch('/api/knowledge/dir');let d=await r.json();
-    document.getElementById('kb-dir-path').textContent=d.directory;
-  }catch(e){}
-}
-function closeKbManager(){document.getElementById('kb-overlay').style.display='none'}
-async function refreshKbStats(){
-  try{let r=await fetch('/api/knowledge/stats');let s=await r.json();
-    document.getElementById('kb-stats-panel').innerHTML=
-      '<span>'+s.totalDocuments+' 文档</span><span>'+s.totalChunks+' 切片</span>'+
-      '<span>初中:'+(s.juniorCount||0)+'</span><span>高中:'+(s.seniorCount||0)+'</span>'+
-      '<span>'+(s.diskSizeBytes/1024).toFixed(1)+' KB</span>'+
-      (s.lastIndexedTime?'<span>'+s.lastIndexedTime+'</span>':'');
-  }catch(e){}
-}
-let kbFileListCache=[];
-async function refreshKbFileList(){
-  try{let r=await fetch('/api/knowledge/pdf-list');let files=await r.json();
-    kbFileListCache=files||[];
-    let list=document.getElementById('kb-file-list');
-    if(!files.length){list.innerHTML='<div class="empty-hint">知识库目录为空<br>可上传PDF或放入目录后刷新</div>';return}
-    list.innerHTML=files.map((f,i)=>'<div class="kb-file-item"><span class="fn">'+escapeHtml(String(f.name))+'</span><span class="fs">'+(f.size/1024).toFixed(1)+' KB</span><span class="kb-del" onclick="event.stopPropagation();removeKbDocumentIdx('+i+')">删除</span></div>').join('');
-  }catch(e){document.getElementById('kb-file-list').innerHTML='<div class="empty-hint">加载失败</div>'}
-}
-async function uploadKbFiles(){
-  let input=document.getElementById('kb-upload-input');
-  if(!input.files.length){showToast('请先选择PDF文件');return}
-  let files=[...input.files];
-  let log=document.getElementById('kb-build-log');
-  log.style.display='block';log.innerHTML='正在上传并索引 '+files.length+' 个文件...\n';
-  let stageVal=document.getElementById('kb-stage-sel').value||'';
-  let ok=0;
-  for(let f of files){
-    try{
-      let fd=new FormData();
-      fd.append('file',f);
-      fd.append('stage',stageVal);
-      fd.append('apiKey',currentConfig.apiKey||'');
-      fd.append('baseUrl',currentConfig.baseUrl||'');
-      let r=await fetch('/api/knowledge/upload',{method:'POST',body:fd});
-      let d;
-      try{d=await r.json()}
-      catch(e){throw new Error('服务器中断了响应（文件可能超限，建议放入知识库目录后批量索引）')}
-      if(d.success){log.innerHTML+='成功: '+escapeHtml(String(f.name))+'（'+escapeHtml(String(d.stage))+'，'+d.chunkCount+' 块）\n';ok++}
-      else{log.innerHTML+='失败: '+escapeHtml(String(f.name))+' - '+escapeHtml(String(d.error||'未知错误'))+'\n'}
-    }catch(e){log.innerHTML+='失败: '+escapeHtml(String(f.name))+' - '+escapeHtml(String(e.message))+'\n'}
-  }
-  input.value='';document.getElementById('kb-upload-label').textContent='';
-  await refreshKbFileList();await refreshKbStats();await updateKbStatus();
-  showToast('上传完成 '+ok+'/'+files.length);
-}
-function removeKbDocumentIdx(i){
-  let f=kbFileListCache[i];if(!f)return;
-  if(!confirm('确定删除此文档的索引和源文件？\n'+f.name))return;
-  fetch('/api/knowledge/document',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({fileName:f.name,deleteSource:'true'})})
-    .then(function(){return refreshKbFileList()})
-    .then(function(){return refreshKbStats()})
-    .then(function(){updateKbStatus();showToast('已删除')})
-    ['catch'](function(){showToast('删除失败')});
-}
-let buildPollTimer=null;
-async function buildKbIndex(){
-  let log=document.getElementById('kb-build-log');
-  let bar=document.getElementById('kb-progress-bar');
-  let fill=document.getElementById('kb-progress-fill');
-  let txt=document.getElementById('kb-progress-text');
-  log.style.display='block';log.innerHTML='正在批量索引...\n';
-  bar.style.display='block';txt.style.display='block';fill.style.width='0%';
-  try{
-    let dirResp=await fetch('/api/knowledge/dir');let dirData=await dirResp.json();
-    let stageVal=document.getElementById('kb-stage-sel').value;
-    let apiKey=currentConfig.apiKey||'';
-    let baseUrl=currentConfig.baseUrl||'';
-    let body={dirPath:dirData.directory,stage:stageVal||undefined,apiKey:apiKey,baseUrl:baseUrl};
-    // 启动索引进度轮询
-    buildPollTimer=setInterval(async()=>{
-      try{let pr=await fetch('/api/knowledge/progress');let pd=await pr.json();
-        if(pd.total>0){fill.style.width=pd.percent+'%';txt.textContent=pd.stage+' ('+pd.current+'/'+pd.total+')'}
-      }catch(e){}
-    },1000);
-    let r=await fetch('/api/knowledge/index/directory',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    clearInterval(buildPollTimer);buildPollTimer=null;
-    let result=await r.json();
-    if(result.success){
-      log.innerHTML+='索引完成！成功 '+result.successFiles+'/'+result.totalFiles+' 个文件\n';
-      if(result.details){for(let[k,v]of Object.entries(result.details)){log.innerHTML+=('  '+escapeHtml(String(k))+': '+(v>0?v+' 块':'失败')+'\n')}}
-      fill.style.width='100%';txt.textContent='索引完成';
-      await refreshKbFileList();await refreshKbStats();await updateKbStatus();
-    }else{log.innerHTML+='失败: '+escapeHtml(String(result.error))+'\n';fill.style.width='0%'}
-  }catch(e){log.innerHTML+='索引失败: '+escapeHtml(String(e.message))+'\n';clearInterval(buildPollTimer)}
-  setTimeout(()=>{bar.style.display='none';txt.style.display='none'},3000);
-}
-async function buildKbIncremental(){
-  let log=document.getElementById('kb-build-log');log.style.display='block';log.innerHTML='正在增量索引（跳过已处理文件）...\n';
-  try{
-    let dirResp=await fetch('/api/knowledge/dir');let dirData=await dirResp.json();
-    let stageVal=document.getElementById('kb-stage-sel').value;
-    let apiKey=currentConfig.apiKey||'';let baseUrl=currentConfig.baseUrl||'';
-    let body={dirPath:dirData.directory,stage:stageVal||undefined,apiKey:apiKey,baseUrl:baseUrl};
-    let r=await fetch('/api/knowledge/index/incremental',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    let result=await r.json();
-    if(result.success){
-      log.innerHTML+='增量完成！新增 '+result.newFiles+' 文件，跳过 '+result.skippedFiles+'\n';
-      await refreshKbFileList();await refreshKbStats();await updateKbStatus();
-    }else{log.innerHTML+='失败: '+escapeHtml(String(result.error))+'\n'}
-  }catch(e){log.innerHTML+='失败: '+escapeHtml(String(e.message))+'\n'}
-}
-async function configMathPix(){
-  let appId=prompt('MathPix App ID (https://mathpix.com/ 注册获取):');
-  if(!appId)return;
-  let appKey=prompt('MathPix App Key:');
-  if(!appKey)return;
-  await fetch('/api/knowledge/mathpix-config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appId:appId,appKey:appKey})});
-  showToast('MathPix 已配置');
-}
-async function retryFailedWithOcr(){
-  if(!confirm('将使用OCR服务重试所有失败文件。请确保Python OCR服务已启动(127.0.0.1:8001)。继续？'))return;
-  let log=document.getElementById('kb-build-log');log.style.display='block';log.innerHTML='正在OCR重试失败文件...\n';
-  let bar=document.getElementById('kb-progress-bar');bar.style.display='block';
-  let fill=document.getElementById('kb-progress-fill');fill.style.width='10%';
-  try{
-    let dirResp=await fetch('/api/knowledge/dir');let dirData=await dirResp.json();
-    let r=await fetch('/api/knowledge/retry-ocr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dirPath:dirData.directory})});
-    let result=await r.json();
-    if(result.success){log.innerHTML+='OCR重试完成！新增 '+result.newFiles+' 文件\n';fill.style.width='100%'}
-    else{log.innerHTML+='失败: '+escapeHtml(String(result.error))+'\n'}
-    await refreshKbStats();await updateKbStatus();await loadFailedFiles();
-  }catch(e){log.innerHTML+='失败: '+escapeHtml(String(e.message))+'\n'}
-  setTimeout(()=>bar.style.display='none',3000);
-}
-async function loadFailedFiles(){
-  let list=document.getElementById('kb-failed-list');list.style.display='block';
-  try{
-    let r=await fetch('/api/knowledge/failed-files');let d=await r.json();
-    if(!d.files||!d.files.length){list.innerHTML='<div class="empty-hint">无失败文件</div>';return}
-    list.innerHTML='<b>失败文件 ('+d.count+'):</b> '+d.files.map(f=>'<div style="padding:2px 0;border-bottom:1px solid var(--sep)"><span>'+f.fileName+'</span><span style="color:var(--text2);font-size:10px;margin-left:8px">'+f.reason+'</span></div>').join('');
-  }catch(e){list.innerHTML='<div class="empty-hint">加载失败</div>'}
-}
-async function resetKbCheckpoint(){
-  if(!confirm('重置断点后下次索引将全量重建所有PDF。确定继续？'))return;
-  await fetch('/api/knowledge/reset-checkpoint',{method:'POST'});
-  showToast('断点已重置');
-}
-async function clearKb(){
-  if(!confirm('确定清空全部知识库索引？此操作不可恢复。'))return;
-  try{await fetch('/api/knowledge/clear',{method:'DELETE'});showToast('知识库已清空');await refreshKbFileList();await refreshKbStats();await updateKbStatus()}
-  catch(e){showToast('清空失败')}
-}
-
-// ===== 启动 =====
-(function init(){
-  // 恢复学段
-  let savedStage=localStorage.getItem('mathStage');
-  if(savedStage){
-    currentStage=savedStage;
-    document.getElementById('stage-sel').value=savedStage;
-    document.getElementById('grade-badge').textContent=getStageLabel(savedStage);
-  }
-  // 恢复大学拓展状态
-  allowExtend=localStorage.getItem('allowExtend')==='1'&&currentStage==='senior';
-  document.getElementById('extend-toggle').checked=allowExtend;
-  updateExtendToggleState();
-  updateExtendToggleStyle();
-  // 恢复侧边栏
-  let sbState=localStorage.getItem('sidebarOpen');
-  if(sbState==='0'){sidebarOpen=false;document.getElementById('sidebar').classList.add('collapsed');document.getElementById('sidebar-toggle').textContent='教学工具'}
-  // 渲染数据面板
-  renderErrorBook();
-  updateQuickBar();
-  // 加载历史会话列表
-  loadSessionList();
-  // 加载模型与会话
-  loadProviders().then(()=>initSession());
-  updateKbStatus();
-  inputBox.focus();
-})();
-
-// ===== 对话历史管理 =====
-function loadSessionList(){
-  fetch('/api/history/sessions?page=0&size=50')
-    .then(function(r){return r.json()})
-    .then(function(sessions){
-      renderSessionList(sessions||[]);
-    })['catch'](function(e){
-      // 加载失败不覆盖已有列表
-    });
-}
-
-function renderSessionList(sessions){
-  var list=document.getElementById('history-list');
-  if(!sessions||!sessions.length){
-    list.innerHTML='<div class="empty-hint">暂无历史对话<br><span style="font-size:10px">发送第一条消息自动保存</span></div>';
-    return;
-  }
-  list.innerHTML=sessions.map(function(s){
-    var title=escapeHtml(s.title||'新对话');
-    var time=s.updateTime?s.updateTime.substring(0,16):'';
-    var active=s.sessionId===currentDbSessionId?' active':'';
-    return'<div class="history-item'+active+'" onclick="switchSession('+s.sessionId+')" title="'+title+'">'
-      +'<span class="hdel" onclick="event.stopPropagation();deleteSession('+s.sessionId+')">删除</span>'
-      +'<div class="htitle">'+title+'</div>'
-      +'<div class="htime">'+time+'</div>'
-      +'</div>';
-  }).join('');
-}
-
-function createNewSession(){
-  // 清空聊天区 + 清空内存会话（避免旧消息污染新对话）
-  stopGeneration();
-  fetch('/api/chat',{method:'DELETE'});
-  document.getElementById('chat-list').innerHTML=buildWelcomeCard();
-  lastAiFullText='';lastThinkFullText='';
-  // 再异步创建数据库会话
-  fetch('/api/history/session/create',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({title:'新对话',stage:getStage(),modelName:currentConfig.modelName||''})
-  }).then(function(r){return r.json()}).then(function(data){
-    currentDbSessionId=data.sessionId;
-    localStorage.setItem('currentDbSessionId',currentDbSessionId);
-    loadSessionList();
-    showToast('新对话已创建');
-  })['catch'](function(e){
-    showToast('创建失败，请重试');
-  });
-}
-
-function switchSession(sessionId){
-  // 先切换ID和高亮
-  currentDbSessionId=sessionId;
-  localStorage.setItem('currentDbSessionId',sessionId);
-  loadSessionList();
-  // 加载历史消息
-  document.getElementById('chat-list').innerHTML='<div class="empty-hint">加载中...</div>';
-  fetch('/api/history/messages/'+sessionId)
-    .then(function(r){return r.json()})
-    .then(function(msgs){
-      var chatList=document.getElementById('chat-list');
-      chatList.innerHTML='';
-      if(!msgs||!msgs.length){
-        chatList.innerHTML=buildWelcomeCard();
-        return;
-      }
-      msgs.forEach(function(m){
-        if(m.role==='user')addMessage(m.content,'user');
-        else if(m.role==='assistant')addMessage(m.content,'ai',m.thinkRaw||null);
-      });
-      scrollToBottom();
-    })['catch'](function(e){
-      document.getElementById('chat-list').innerHTML=buildWelcomeCard();
-      showToast('加载失败');
-    });
-}
-
-function deleteSession(sessionId){
-  if(!confirm('确定删除此对话？'))return;
-  fetch('/api/history/session/'+sessionId,{method:'DELETE'})
-    .then(function(){
-      if(currentDbSessionId===sessionId){
-        currentDbSessionId=null;
-        localStorage.removeItem('currentDbSessionId');
-        document.getElementById('chat-list').innerHTML=buildWelcomeCard();
-      }
-      loadSessionList();
-      showToast('已删除');
-    })['catch'](function(e){
-      showToast('删除失败');
-    });
-}
-
-// 恢复上次会话
-(function(){
-  var saved=localStorage.getItem('currentDbSessionId');
-  if(saved)currentDbSessionId=parseInt(saved);
-})();
-
-// ===== 鼠标跟随柔光 =====
-document.addEventListener('mousemove',function(e){
-  document.body.style.setProperty('--mx',e.clientX+'px');
-  document.body.style.setProperty('--my',e.clientY+'px');
-});
-
-// ===== 星空粒子背景 =====
-(function(){
-  var c=document.getElementById('particle-canvas');
-  if(!c)return;
-  var ctx=c.getContext('2d');
-  var stars=[],STAR_COUNT=80;
-  function resize(){c.width=window.innerWidth;c.height=window.innerHeight}
-  resize();window.addEventListener('resize',resize);
-  for(var i=0;i<STAR_COUNT;i++){
-    stars.push({
-      x:Math.random()*c.width,y:Math.random()*c.height,
-      r:Math.random()*1.6+.4,
-      speed:Math.random()*.3+.1,
-      opacity:Math.random()*.5+.3,
-      twinkle:Math.random()*Math.PI*2
-    });
-  }
-  function draw(){
-    ctx.clearRect(0,0,c.width,c.height);
-    for(var i=0;i<stars.length;i++){
-      var s=stars[i];
-      s.twinkle+=.02;
-      var alpha=s.opacity+.15*Math.sin(s.twinkle);
-      s.y-=s.speed;
-      if(s.y<-5){s.y=c.height+5;s.x=Math.random()*c.width}
-      ctx.beginPath();
-      ctx.arc(s.x,s.y,s.r,0,Math.PI*2);
-      ctx.fillStyle='rgba(180,160,255,'+Math.max(0,Math.min(1,alpha))+')';
-      ctx.fill();
-    }
-    requestAnimationFrame(draw);
-  }
-  draw();
-})();
-
-// ===== 思考过程面板 =====
-var _origAddAiBubble=addAiBubble;
-addAiBubble=function(){
-  _origAddAiBubble();
-  var row=document.getElementById('ai-stream');
-  if(!row)return;
-  var b=row.querySelector('.bubble');
-  // 注入思考面板DOM
-  b.innerHTML='<div class="think-toggle-bar" id="think-toggle-bar" style="display:none"><button class="toggle-think-btn" onclick="toggleThink()">查看AI推理过程</button></div><div class="think-collapse collapse-wrap" id="think-panel"><div class="think-block"><div class="think-title">AI推理草稿</div><div class="think-content" id="think-content"></div></div></div><div class="answer-block" id="answer-block">'+b.innerHTML+'</div>';
-};
-
-function updateThinkPanel(text){
-  var bar=document.getElementById('think-toggle-bar');
-  var content=document.getElementById('think-content');
-  if(bar)bar.style.display=text?'':'none';
-  if(content)content.textContent=text;
-}
-
-function toggleThink(){
-  var panel=document.getElementById('think-panel');
-  var btn=document.querySelector('.toggle-think-btn');
-  if(!panel||!btn)return;
-  var isOpen=panel.classList.toggle('open');
-  btn.textContent=isOpen?'收起推理过程':'查看AI推理过程';
-  // 首次展开时渲染公式
-  if(isOpen){
-    var tc=document.getElementById('think-content');
-    if(tc&&tc.textContent){
-      tc.innerHTML=sanitizeHtml(marked.parse(renderLatex(tc.textContent,true)));
-    }
-  }
-  // 持久化状态
-  try{
-    var state=JSON.parse(localStorage.getItem('thinkStates')||'{}');
-    state[currentDbSessionId||'default']=isOpen;
-    localStorage.setItem('thinkStates',JSON.stringify(state));
-  }catch(e){}
-}
-
-// 恢复上次展开状态
-(function(){
-  try{
-    var state=JSON.parse(localStorage.getItem('thinkStates')||'{}');
-    var key=currentDbSessionId||'default';
-    if(state[key]){
-      setTimeout(function(){
-        var panel=document.getElementById('think-panel');
-        var btn=document.querySelector('.toggle-think-btn');
-        if(panel&&btn){panel.classList.add('open');btn.textContent='收起推理过程';}
-      },300);
-    }
-  }catch(e){}
-})();
-
-// 加载历史消息时附带思考内容
-var _origAddMessage=addMessage;
-addMessage=function(text,sender,thinkRaw){
-  _origAddMessage(text,sender);
-  if(sender==='ai'&&thinkRaw){
-    var bubbles=document.querySelectorAll('.row.ai .bubble');
-    var lastB=bubbles[bubbles.length-1];
-    if(lastB&&!lastB.querySelector('.think-toggle-bar')){
-      var origHtml=lastB.innerHTML;
-      lastB.innerHTML='<div class="think-toggle-bar"><button class="toggle-think-btn" onclick="toggleThink()">查看AI推理过程</button></div><div class="think-collapse collapse-wrap open"><div class="think-block"><div class="think-title">AI推理草稿</div><div class="think-content">'+escapeHtml(thinkRaw)+'</div></div></div><div class="answer-block">'+origHtml+'</div>';
-    }
-  }
-};
-
-</script></body></html>
+<script src="/assets/app.js?v=20261123ba" defer></script>
+</body>
+</html>

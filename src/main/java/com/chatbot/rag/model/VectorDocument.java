@@ -3,7 +3,7 @@ package com.chatbot.rag.model;
 /**
  * 向量化文档 — 文档切片 + 嵌入向量
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 public class VectorDocument {
 

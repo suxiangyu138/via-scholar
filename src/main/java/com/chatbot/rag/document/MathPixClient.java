@@ -19,7 +19,7 @@ import java.util.Base64;
  * 注册: https://mathpix.com/  → 获取 app_id + app_key
  * 免费额度: 1000次/月
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 @Service
 public class MathPixClient {

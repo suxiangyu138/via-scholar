@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 /**
  * 阿里通义千问 — OpenAI 兼容协议
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 @Component
 public class QwenAdapter extends BaseModelAdapter {

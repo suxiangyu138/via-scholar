@@ -5,7 +5,7 @@ import java.util.*;
 /**
  * 爬虫任务配置请求
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 public class CrawlRequest {
 

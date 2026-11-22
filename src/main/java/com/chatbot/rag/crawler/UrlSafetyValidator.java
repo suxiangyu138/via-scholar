@@ -22,7 +22,7 @@ import java.util.Locale;
  * 注意：这里刻意做成「每跳都校验」。只在入口校验一次是不够的，
  * 目标站点返回 {@code 302 Location: http://127.0.0.1:9200/} 就能把请求带进内网。
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 public final class UrlSafetyValidator {
 

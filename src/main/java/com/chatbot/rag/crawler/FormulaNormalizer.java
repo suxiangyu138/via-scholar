@@ -6,7 +6,7 @@ import java.util.regex.Pattern;
 /**
  * 数学公式标准化 — 将网页中各种非标 LaTeX 统一为 $$...$$ 或 $...$
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 public class FormulaNormalizer {
 

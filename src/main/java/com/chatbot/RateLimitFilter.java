@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * /api/knowledge/progress（60 次/分钟），阈值必须留足余量。
  * 静态资源不限制。
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 @Component
 public class RateLimitFilter implements Filter {

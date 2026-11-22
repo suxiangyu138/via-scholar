@@ -13,7 +13,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * 切勿改成 allowedOrigins("*")：那会让任意网站在用户浏览器里
  * 直接读写本机这个无认证的服务。
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 @Configuration
 public class WebConfig implements WebMvcConfigurer {

@@ -6,7 +6,7 @@ import java.util.HashMap;
 /**
  * 文档切片模型 — 数学专用分块后的最小检索单元
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 public class DocumentChunk {
 

@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
  * 3. 按章节标题优先切分
  * 4. 识别并标注学段、知识点、题型
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 @Component
 public class MathChunkingStrategy {

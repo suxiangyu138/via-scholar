@@ -24,7 +24,7 @@ import java.util.stream.Stream;
  * - 去除页眉页脚、水印、页码
  * - 行内公式与文字合并
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 @Component
 public class PdfDocumentParser {

@@ -12,11 +12,11 @@
     </parent>
 
     <groupId>com.chatbot</groupId>
-    <artifactId>deepseek-chatbot</artifactId>
-    <version>1.0.0</version>
+    <artifactId>via-scholar</artifactId>
+    <version>4.0.0</version>
     <packaging>jar</packaging>
 
-    <name>LLMChatBot</name>
+    <name>Via Scholar</name>
 
     <properties>
         <java.version>25</java.version>

@@ -24,7 +24,7 @@ import java.util.function.Consumer;
 /**
  * DeepSeek API 客户端，支持普通请求和流式输出
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 public class DeepSeekClient {
 

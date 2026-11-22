@@ -7,7 +7,7 @@ import java.util.List;
 /**
  * 适配器工厂 — 根据 provider 字段自动匹配
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 @Component
 public class ModelAdapterFactory {

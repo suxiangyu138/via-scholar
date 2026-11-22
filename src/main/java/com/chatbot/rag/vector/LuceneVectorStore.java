@@ -70,7 +70,7 @@ import java.util.stream.Stream;
  * 向量统一为本地 256 维 n-gram 嵌入：维度一致、零成本，云端嵌入维度（1536）与本地
  * 不兼容，混用会破坏向量检索，故本引擎一律使用本地向量。
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 @Component
 public class LuceneVectorStore {

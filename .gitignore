@@ -49,6 +49,8 @@ data/
 # Playwright 测试截图/快照
 .playwright-mcp/
 *.png
+# 品牌图标属于静态资源，不受上面的截图规则影响
+!src/main/resources/static/assets/*.png
 
 # Python 虚拟环境
 ocr_env/

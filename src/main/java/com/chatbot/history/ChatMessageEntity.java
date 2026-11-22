@@ -26,6 +26,10 @@ public class ChatMessageEntity {
     @Column(columnDefinition = "CLOB")
     private String thinkRaw;
 
+    /** 一次回答的 token/延迟/费用指标（JSON），历史消息回看时使用 */
+    @Column(columnDefinition = "CLOB")
+    private String usageJson;
+
     private LocalDateTime createTime;
 
     @PrePersist
@@ -43,6 +47,9 @@ public class ChatMessageEntity {
     public void setRawContent(String v) { rawContent = v; }
     public String getThinkRaw() { return thinkRaw; }
     public void setThinkRaw(String v) { thinkRaw = v; }
+
+    public String getUsageJson() { return usageJson; }
+    public void setUsageJson(String v) { usageJson = v; }
     public LocalDateTime getCreateTime() { return createTime; }
     public void setCreateTime(LocalDateTime v) { createTime = v; }
 }

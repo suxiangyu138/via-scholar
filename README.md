@@ -1,284 +1,139 @@
-<h1 align="center">苏巷雨 · 智慧教学智能体</h1>
+# 问道 Via Scholar
 
-<p align="center"><strong>K12+大学 数学 RAG 智能辅导平台 — 多模型聚合 · 深空玻璃拟态 · 对话历史 · 思考可视化</strong></p>
-<p align="center">6 家大模型 · 四层学段适配 · PDF 知识库 · LaTeX 渲染 · 流式平滑输出 · 思考过程折叠</p>
-<p align="center"><sub>本仓库原名 <code>LlmChatBot_sxy</code>，2026-09 更名为 <code>AI-Smart-Teaching-Agent-Platform</code>。项目、代码与提交历史均未变动，只是改了名字——旧链接会由 GitHub 自动跳转到此处。</sub></p>
+面向 K12 教师与学生的 AI 教学智能体。
 
----
+学生用它分步理解题目，教师用它备课、出题和整理易错点。对话由 **Pathfinder** 完成，模型统一使用 **DeepSeek**。
 
-## 目录
+- GitHub：https://github.com/suxiangyu138/via-scholar
+- Gitee：https://gitee.com/suxiangyu138/via-scholar
+- 当前版本：v4.0.0
+- 技术栈：Java 25 · Spring Boot 3.5 · H2 · 原生 JS
 
-- [核心特性](#核心特性)
-- [学段体系](#学段体系)
-- [RAG 知识库](#rag-知识库)
-- [对话历史系统](#对话历史系统)
-- [思考过程可视化](#思考过程可视化)
-- [支持厂商与模型](#支持厂商与模型)
-- [架构设计](#架构设计)
-- [快速开始](#快速开始)
-- [知识库使用指南](#知识库使用指南)
-- [API 参考](#api-参考)
-- [项目结构](#项目结构)
-- [开发指南](#开发指南)
-- [更新日志](#更新日志)
+## 功能
 
----
-
-## 核心特性
-
-| 特性 | 说明 |
-|------|------|
-| 深空玻璃拟态 UI | 渐变星空背景 · 毛玻璃卡片 · 粒子动效 · 鼠标跟随柔光 · 流光边框 |
-| 四层学段 | 小学→初中→高中→大学拓展，精准难度匹配 |
-| 对话历史 | H2 持久化 · 会话列表 · 一键切换 · 自动标题 · 软删除 |
-| 思考可视化 | 推理过程自动隐藏 · 点击展开/折叠 · 状态持久化 |
-| 流式平滑输出 | 缓冲队列 + 匀速打字机 · 智能加速 · 不再蹦字 |
-| RAG 知识库 | PDF→数学分块→向量检索→上下文增强 |
-| 多厂商聚合 | DeepSeek / Kimi / Qwen / GLM / MiniMax / MiMo |
-| 公式渲染 | KaTeX + amsmath · trust 模式 · 裸 LaTeX 自动包裹 · 破碎公式修复 |
-| 网页爬虫 | BFS 爬虫 + Playwright 渲染 + FormulaNormalizer 公式标准化 |
-| OCR 识别 | PaddleOCR + Pix2Tex + MathPix 三通道 · 扫描版 PDF 支持 |
-| 错题本 | LocalStorage 持久化 · 按学段分类 |
-| API Key 本地 | 存于浏览器 localStorage，随请求发给本机服务端并转发给模型厂商；当前界面不会把它写入服务端配置 |
-| 限流保护 | 对话 30 次/分钟/IP，其余接口 300 次/分钟/IP |
-| 默认只监听本机 | 服务绑定 127.0.0.1，局域网内其他设备无法访问 |
-
----
-
-## 学段体系
-
-| 学段 | Stage | 知识范围 | Temperature |
-|------|-------|---------|-------------|
-| 小学 | `primary` | 算术、四则运算、分数小数、几何图形、应用题 | 0.1 |
-| 初中 | `junior` | 函数、几何、三角、不等式、概率统计 | 0.15 |
-| 高中 | `senior` | 导数、圆锥曲线、数列、立体几何、排列组合 | 0.2 |
-| 大学拓展 | `university` | 微积分进阶、线性代数、离散数学、竞赛 | 0.3 |
-
-- 低学段屏蔽超纲内容 · 高中专属拓展开关 · 动态 Prompt · RAG 学段过滤
-
----
-
-## RAG 知识库
-
-```
-用户提问 → 学段/题型识别 → 向量库检索 Top-K → 学段过滤 + 权重排序
-         → 拼接上下文 → LLM 推理 → 流式返回 + 知识库溯源
-```
-
-| 组件 | 技术 |
-|------|------|
-| PDF 解析 | Apache PDFBox 3.0.4 + 扫描版 OCR |
-| 数学分块 | 自研 MathChunkingStrategy（公式保护 + 章节切分 + 题型/公式元数据） |
-| 向量嵌入 | 双模式：云端 Embedding API / 本地 n-gram TF-IDF 降级 |
-| 向量存储 | 自研 InMemoryVectorStore（余弦相似度 + 多路召回 + JSON 持久化） |
-| 公式标准化 | FormulaNormalizer：网页 MathJax/`\(`/`\[` → `$$`/`$`；裸 LaTeX 自动包裹 |
-| OCR | PaddleOCR（中文）+ Pix2Tex（公式）+ MathPix（云端优先） |
-
-知识库目录结构：
-
-```
-math-library/
-├── primary/    ├── junior/    ├── senior/    └── university/
-```
-
----
-
-## 对话历史系统
-
-### 数据持久化
-
-- **H2 嵌入式数据库**：零配置，文件存储在 `data/chatbot-db`
-- **会话表** (`chat_session`)：标题、学段、模型、时间戳、软删除
-- **消息表** (`chat_message`)：角色、完整文本、思考内容 (`think_raw`)
-- 标题自动取首条用户消息前 18 字
-
-### 交互
-
-- 侧边栏「历史对话」显示最近 50 条会话
-- 新建对话自动创建数据库记录
-- 点击历史会话加载全部消息（含思考过程）
-- hover 显示删除按钮，确认后逻辑删除
-- 刷新页面自动恢复上次会话 (LocalStorage)
-
----
-
-## 思考过程可视化
-
-推理模型（DeepSeek-R1 / Kimi K2.6 等）输出分为两层：
-
-| 层 | 展示方式 | 内容 |
-|----|---------|------|
-| 思考草稿 | 默认折叠，虚线弱化样式 | 内部推理、试算、多思路 |
-| 正式答案 | 正常展示，高亮清晰 | 标准 LaTeX 解题过程 |
-
-- `reasoning_content` → 隐藏面板，点「查看AI推理过程」展开
-- `content` → 正文区域，匀速平滑输出
-- 展开状态记忆 (LocalStorage) · 首次展开时懒渲染公式
-- 数据库 `think_raw` 字段单独存储
-
----
-
-## 支持厂商与模型
-
-| 厂商 | Provider | 推荐模型 | 推理 |
-|------|----------|---------|------|
-| 深度求索 | `deepseek` | deepseek-v4-pro, deepseek-r1, deepseek-v3.2 | R1 |
-| Moonshot Kimi | `moonshot` | kimi-k2.6, kimi-k2.5, moonshot-v1-128k | K2.6 |
-| 阿里通义千问 | `qwen` | qwen3.7-max, qwen-max, qwen-plus | Max |
-| 智谱AI GLM | `zhipu` | glm-5.2, glm-5-turbo, glm-4.7-flash | 5.2 |
-| MiniMax | `minimax` | MiniMax-M3, MiniMax-M2.7 | |
-| 小米 MiMo | `mimo` | mimo-v2.5-pro, mimo-v2-pro, mimo-v2-flash | |
-
----
-
-## 架构设计
-
-```
-【前端】index.html — 深空玻璃拟态 · SSE 流式 · KaTeX 渲染 · 思考面板 · 历史列表
-
-【控制层】ChatController / KnowledgeBaseController / CrawlerController
-    SSE 流式 + reasoning 事件 · RAG API · 爬虫 API · 历史 CRUD
-
-【业务层】ChatService / RagService / ChatHistoryService
-    多模型适配器 · 数学 Prompt 引擎 · RAG 检索 · 历史持久化 · 公式标准化
-
-【数据层】H2 (JPA) + InMemoryVectorStore + InMemory Sessions + LocalStorage
-```
-
-```
-BaseModelAdapter (streamChat, extractContent, extractReasoning)
-├── DeepSeekAdapter     — buildOpenAiBody() 共享
-├── MoonshotKimiAdapter — 温度兼容
-├── QwenAdapter / ZhipuGlmAdapter / MiniMaxAdapter / MiMoAdapter
-```
-
----
+- **双模式教学**：学生模式下分步讲懂；教师模式下生成教学目标、例题、易错点和分层作业
+- **K12 难度边界**：覆盖小学、初中、高中，不主动引入大学数学或超纲工具
+- **题目附件**：支持图片、PDF、txt/md/csv/json/html/tex，单条消息最多 50 个
+- **DeepSeek 单厂商**：模型列表从上游实时获取，不再聚合多厂商
+- **账户余额**：顶部显示 DeepSeek 账户余额，点击可刷新
+- **用量指标**：输入/输出 token、缓存命中率、首 token 延迟、输出速率、估算费用
+- **流式回答**：SSE 增量推送，推理过程与正式答案分层展示
+- **公式渲染**：AI 输出自动渲染 LaTeX，用户只需用自然语言或图片提问
+- **对话历史**：H2 持久化，按会话隔离，指标随消息保存
+- **移动端适配**：模型底部弹层、侧边栏抽屉、输入框安全区适配
 
 ## 快速开始
 
-### 环境要求
-
-- **JDK 25+** · **Maven 3.9+**
+环境要求：JDK 25+、Maven 3.9+。
 
 ```bash
-git clone https://github.com/suxiangyu138/AI-Smart-Teaching-Agent-Platform.git
-cd AI-Smart-Teaching-Agent-Platform
-mvn clean compile
+git clone https://github.com/suxiangyu138/via-scholar.git
+cd via-scholar
 mvn spring-boot:run
 ```
 
-浏览器访问 **http://localhost:8080**。Windows 用户双击 `启动聊天机器人.bat`。
+访问 http://localhost:8080。
 
-### 基本使用
+也可以先打包再运行：
 
-1. 选择厂商与模型 → 点击 **API Key** 填入密钥
-2. 侧边栏选择学段
-3. 输入数学题目，回车发送
-4. AI 流式输出答案 · 推理过程在「查看AI推理过程」中
-
----
-
-## API 参考
-
-### 聊天
-
-```
-POST /api/chat          SSE 流式聊天（event:chunk / event:reasoning / event:finish）
-GET  /api/history       获取内存会话历史
-DELETE /api/chat        清空内存会话
-GET  /api/session       创建内存会话
-GET  /api/providers      厂商与模型列表
+```bash
+mvn -DskipTests package
+java -jar target/via-scholar-4.0.0.jar
 ```
 
-### 对话历史
+### 配置
 
+1. 点击顶部模型胶囊，或侧边栏底部的当前模型卡片
+2. 填写 DeepSeek API Key
+3. 点击「获取最新模型」，从上游列表中选择模型
+4. 保存后，顶部显示账户余额，即可开始对话
+
+API Key 仅保存在当前浏览器的 `localStorage`，每次请求由本机服务转发给 DeepSeek，不写入服务端配置文件。
+
+## 指标与费用
+
+每次回答结束，服务端在 SSE 的 `finish` 事件中返回指标：
+
+| 字段 | 说明 |
+|------|------|
+| `promptTokens` / `completionTokens` | 输入 / 输出 token |
+| `cacheHitRate` | `prompt_cache_hit_tokens / prompt_tokens` |
+| `ttftMs` | 从发起上游请求到第一个内容分片的时间 |
+| `outputTps` | 输出 token / 首 token 之后的耗时 |
+| `costUsd` | 按 DeepSeek 官方价格估算的费用 |
+
+- 费用以美元计价，高峰时段为 UTC 周一至周五 `01:00-04:00`、`06:00-10:00`，其余时段按低峰价
+- 未接入中国法定节假日表，费用标注为估算值
+- 余额来自 DeepSeek `/user/balance`，按接口返回的 CNY / USD 显示
+- 指标随回答写入 H2，切换历史会话后仍可回看
+
+## 架构
+
+```text
+Browser (index.html + assets/app.js)
+  → POST /api/chat
+  → ChatController
+  → ChatService（Pathfinder 提示词 / 上下文 / 指标）
+  → DeepSeekAdapter
+  → DeepSeek /chat/completions
+  ← SSE: chunk / reasoning / finish / error
 ```
-POST   /api/history/session/create          创建数据库会话
-GET    /api/history/sessions?page=0&size=50 会话列表
-DELETE /api/history/session/{id}            逻辑删除
-PUT    /api/history/session/rename          重命名
-GET    /api/history/messages/{id}           查询全部消息（含 thinkRaw）
-```
 
-### 知识库
+- 前端：`index.html` + `assets/app.css` + `assets/app.js`，原生 JS，无构建步骤
+- 业务：`ChatService` 负责提示词、会话和指标；`DeepSeekPricing` 负责费用估算
+- 附件：`AttachmentService` 落盘临时文件，提取 PDF/文本，并将图片转为 data URL 内容片段
+- 适配：`BaseModelAdapter` 逐行解析 SSE，`DeepSeekAdapter` 请求 `include_usage`
+- 数据：H2 文件库；会话按 `sid` 归属隔离
 
-```
-GET    /api/knowledge/stats               统计
-POST   /api/knowledge/index/pdf           索引单个 PDF
-POST   /api/knowledge/index/directory     批量索引
-POST   /api/knowledge/restandardize       公式批量标准化
-GET    /api/knowledge/formula-stats       公式统计
-DELETE /api/knowledge/clear               清空
-```
+## API
 
-### 爬虫
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/chat` | SSE 流式对话 |
+| GET | `/api/history/sessions` | 历史会话列表 |
+| POST | `/api/history/session/create` | 新建会话 |
+| GET | `/api/history/messages/{id}` | 会话消息，含思考过程与指标 |
+| DELETE | `/api/history/session/{id}` | 删除会话 |
+| POST | `/api/attachments` | 上传图片/文件，最多 50 个 |
+| DELETE | `/api/attachments/{id}` | 删除未发送的附件 |
+| POST | `/api/deepseek/models` | 获取上游最新模型 |
+| POST | `/api/deepseek/balance` | 获取账户余额 |
 
-```
-POST /api/crawler/start                  BFS 爬虫
-GET  /api/crawler/progress               进度
-POST /api/crawler/quick                  单 URL 快速爬取
-POST /api/crawler/playwright-index       Playwright 渲染索引
-```
+## 目录
 
----
-
-## 项目结构
-
-```
+```text
 src/main/java/com/chatbot/
-├── Main.java / WebConfig.java / RateLimitFilter.java
-├── ConfigManager.java / ConfigController.java
-├── ChatController.java / ChatService.java / ChatMessage.java
-├── adapter/            # 6 厂商适配器
-├── model/              # UnifiedChatRequest, UnifiedStreamChunk
-├── history/            # 对话历史持久化
-│   ├── ChatSessionEntity.java / ChatMessageEntity.java
-│   ├── ChatSessionRepository.java / ChatMessageRepository.java
-│   └── ChatHistoryService.java
-└── rag/                # RAG 知识库
-    ├── RagService.java / KnowledgeBaseController.java
-    ├── model/          # DocumentChunk, VectorDocument, SearchResult
-    ├── document/       # PdfDocumentParser, MathChunkingStrategy, MathPixClient, ScanOcrClient
-    ├── embedding/      # EmbeddingService
-    ├── vector/         # InMemoryVectorStore
-    └── crawler/        # WebCrawlerService, PlaywrightClient, FormulaNormalizer, CrawlRequest
+├── ChatController.java / ChatService.java
+├── adapter/            # BaseModelAdapter / DeepSeekAdapter
+├── attachment/         # 附件上传、PDF/文本解析、图片内容片段
+├── deepseek/           # 模型、余额、价格估算
+├── history/            # H2 会话与消息
+├── model/              # 请求、SSE、用量指标
+└── rag/                # 知识库代码保留，当前未接入
+
+src/main/resources/static/
+├── index.html
+├── assets/app.css
+├── assets/app.js
+└── dompurify.min.js
 ```
 
----
+运行时数据写入项目目录下的 `data/`（已 gitignore）：`data/chatbot-db.mv.db`、`data/config/`。
 
-## 更新日志
+## 说明
 
-### v3.0.0 — 深空智能体 · 历史系统 · 思考可视化 (2026-06-22)
+- 仅接入 DeepSeek；其他厂商适配器保留但未暴露
+- 图片输入仅 `deepseek-flash` 支持；`deepseek-v4-pro` 为纯文本，前端会提示切换
+- 附件单文件上限 20MB、总量 100MB、图片总量 25MB；PDF 只提取文本，扫描版建议上传题目图片
+- 附件内容只随当轮发送拼入上下文；历史消息保存文字，不保存原文件
+- RAG 已从产品入口下线，`com.chatbot.rag` 代码保留，后续如需启用应单独设计检索评测
+- 默认只监听 `127.0.0.1`；如改为 `0.0.0.0`，需要先加认证与 HTTPS
+- 项目暂未配置自动化测试
 
-**新增**
-- 深空玻璃拟态 UI：渐变星空背景、毛玻璃卡片、粒子动效、鼠标柔光、流光边框
-- 对话历史系统：H2 持久化、会话列表、切换/删除/自动标题
-- 思考过程可视化：reasoning_content 分离存储、折叠面板、展开状态记忆
-- 流式平滑打字机：缓冲队列 + 25ms 匀速输出 + 智能加速
-- LaTeX 渲染全面修复：trust/strict 模式、`\[`/`\(` 兼容、裸公式自动包裹、破碎公式修复
-- 公式标准化管道：FormulaNormalizer + 批量重标准化接口
-- 网页爬虫：BFS + Playwright + 公式自动标准化
-- OCR 多通道：PaddleOCR + Pix2Tex + MathPix
-- 苏巷雨品牌标识：侧边栏品牌头、欢迎卡片、顶部栏
+## 许可与反馈
 
-**改进**
-- SSE 新增 `reasoning` 事件类型
-- LaTeX 清洗函数 cleanLatexText/cleanLeakedHtml
-- 系统提示词强制 LaTeX 规范（禁止换行拆公式、下标空格）
-- 新建对话自动清理内存会话（避免旧消息污染）
-- 加载指示优化（推理阶段显示「深度思考中」）
-- 侧边栏公式列表 KaTeX 渲染 + 悬停浮窗 + 复制/插入按钮
+MIT License，详见 [LICENSE](./LICENSE)。
 
-### v2.0.0 — K12+大学 RAG 智能体
+维护者：suxiangyu138
 
-- 四层学段体系 · RAG 知识库 · PDF 解析/分块/检索 · 双模式嵌入 · 错题本
-
-### v1.0.0 — 多厂商统一对话平台
-
-- 6 厂商适配器 · SSE 流式 · Markdown + KaTeX · 会话管理 · 深色模式
-
----
-
-## License
-
-MIT License. 详见 [LICENSE](./LICENSE) 文件。
+问题反馈：请提交 [Issue](https://github.com/suxiangyu138/via-scholar/issues)，或直接反馈给维护者。

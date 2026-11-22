@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
  * 注意：kimi-k2.x 推理模型只接受 temperature=1，moonshot-v1 则无此限制。
  * 为兼容所有模型，干脆不传 temperature 字段。
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 @Component
 public class MoonshotKimiAdapter extends BaseModelAdapter {
@@ -31,7 +31,11 @@ public class MoonshotKimiAdapter extends BaseModelAdapter {
             for (var m : req.getMessages()) {
                 ObjectNode o = MAPPER.createObjectNode();
                 o.put("role", m.getRole());
-                o.put("content", m.getContent());
+                if (m.getContentParts() != null && !m.getContentParts().isEmpty()) {
+                    o.set("content", MAPPER.valueToTree(m.getContentParts()));
+                } else {
+                    o.put("content", m.getContent());
+                }
                 msgs.add(o);
             }
         }

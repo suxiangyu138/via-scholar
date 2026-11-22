@@ -3,7 +3,7 @@ package com.chatbot;
 /**
  * 聊天消息模型
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 public class ChatMessage {
 

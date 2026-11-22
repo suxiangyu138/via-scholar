@@ -17,7 +17,7 @@ import java.util.*;
  * - GET    /api/crawler/stats    总览统计
  * - POST   /api/crawler/quick    快捷爬取（简化参数）
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 @RestController
 @RequestMapping("/api/crawler")

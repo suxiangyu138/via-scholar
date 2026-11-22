@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
 /**
  * 知识库管理 REST API
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 @RestController
 @RequestMapping("/api/knowledge")

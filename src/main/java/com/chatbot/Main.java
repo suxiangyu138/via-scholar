@@ -6,7 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 /**
  * Spring Boot 入口
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 @SpringBootApplication
 public class Main {

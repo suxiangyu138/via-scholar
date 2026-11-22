@@ -14,7 +14,7 @@ import java.util.Map;
 /**
  * 配置管理：API Key 持久化存储
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 @Component
 public class ConfigManager {

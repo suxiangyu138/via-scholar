@@ -44,7 +44,7 @@ import java.util.stream.Collectors;
  * - 内容去重（SHA-256）
  * - 异步执行 + 进度追踪
  *
- * @author suxiangyu
+ * @author Via Scholar
  */
 @Service
 public class WebCrawlerService {

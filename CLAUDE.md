@@ -1,175 +1,106 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+技术说明，供后续开发参考。
 
-## Build & Run
+## 产品
+
+**问道 Via Scholar** 是面向 K12 教师与学生的教学智能体，Agent 名 **Pathfinder**，模型只用 **DeepSeek**。
+
+- 学生：分步解题、概念讲解、错题订正、同类练习
+- 教师：教学目标、课堂引入、例题与变式、易错点、分层作业
+- 学段：小学、初中、高中；不主动引入大学数学
+- RAG 已从产品下线，`com.chatbot.rag` 代码保留但不参与对话
+
+## 构建与运行
+
+Java 25 / Maven 3.9+：
 
 ```bash
-# Incremental build (skip clean if app is running — jar file lock)
-mvn compile
+mvn -DskipTests package
+java -jar target/via-scholar-4.0.0.jar
 
-# Full rebuild (stop the app first)
-mvn clean compile
-
-# Run (defaults to port 8080)
+# 或
 mvn spring-boot:run
-# or: java -jar target/deepseek-chatbot-1.0.0.jar
 ```
 
-**Java 25** / **Spring Boot 3.5.15** / **Maven** (no Gradle wrapper). There are **no tests** in this project.
+默认监听 `127.0.0.1:8080`，无自动化测试。
 
-## Application Config
+## 请求流
 
-`application.properties` is minimal — just `server.port=8080` and logging level. Everything is **in-memory** (session history, rate-limit counters). No database, no Spring profiles, no external dependencies beyond the POM. Config directory `~/.deepseek-chatbot/` is gitignored (contains API keys).
+```text
+POST /api/attachments (multipart, 最多 50 个)
+  → AttachmentService 落盘 data/uploads，返回附件 ID
 
-## Architecture
-
-### Adapter Pattern for Multi-Provider LLM
-
-The core abstraction is `BaseModelAdapter` — each AI provider has a `@Component` subclass:
-
-```
-BaseModelAdapter                    (streamChat, extractContent)
-├── DeepSeekAdapter                (deepseek)   — own body builder + shared static helper
-├── MoonshotKimiAdapter            (moonshot)   — own body builder (omits temperature)
-├── QwenAdapter                    (qwen)       — delegates to DeepSeekAdapter.buildOpenAiBody()
-├── ZhipuGlmAdapter                (zhipu)      — delegates to DeepSeekAdapter.buildOpenAiBody()
-├── MiniMaxAdapter                 (minimax)    — delegates to DeepSeekAdapter.buildOpenAiBody()
-└── MiMoAdapter                    (mimo)       — delegates to DeepSeekAdapter.buildOpenAiBody()
+POST /api/chat { messages, attachments:[id] }
+  → ChatController
+  → ChatService（读取历史、拼接 SYSTEM_PROMPT、计时、落库）
+      附件：PDF/文本 → 拼入用户文本；图片 → data URL content parts
+  → DeepSeekAdapter.streamChat
+      stream_options.include_usage = true
+  → SSE: reasoning / chunk / finish / error
 ```
 
-`ModelAdapterFactory` auto-discovers all `BaseModelAdapter` beans via Spring DI constructor injection (`List<BaseModelAdapter>`) and routes by `provider` code.
+## 附件约束
 
-### Code sharing pattern
+- 支持图片（png/jpg/jpeg/webp/gif）、PDF、txt/md/csv/json/html/tex/log
+- 每条消息最多 50 个；单文件 20MB，总量 100MB，图片总量 25MB
+- 图片仅 `deepseek-flash` 支持；`deepseek-v4-pro` 为纯文本，前端会阻止带图片发送
+- PDF 只提取文本（最多 50 页），扫描版建议上传图片
+- 历史消息只保存用户文字，不保存附件内容；附件文件临时存放在 `data/uploads`，24 小时清理
+- Tomcat `server.tomcat.max-part-count=100`，否则 50 个附件会触发 413
 
-Four of the six adapters (Qwen, Zhipu, MiniMax, MiMo) have identical logic — they just call `DeepSeekAdapter.buildOpenAiBody(req, defaultBase)`. Only `DeepSeekAdapter` and `MoonshotKimiAdapter` have custom `buildNativeBody` implementations. The `defaultBase` parameter passed to `buildOpenAiBody` is **not actually used** by that method (it only builds the JSON body); routing is handled by `BaseModelAdapter.buildUrl()` which uses `req.getBaseUrl()` sent from the frontend.
+## 约束
 
-When adding a new standard OpenAI-compatible provider, you only need a 3-line adapter that delegates to `buildOpenAiBody`, plus a new entry in `ChatController.providers()`.
+- `chunk` / `reasoning` 只发送增量；`finish` 才带 `fullContent`、`fullReasoning`、`metrics`
+- `UnifiedStreamChunk` 使用 `@JsonInclude(NON_NULL)`，空字段不输出
+- `metrics` 字段由 `assets/app.js` 的 `renderMetrics` 消费，改名需同步前端
+- `ttftMs` 从上游调用前开始计时；`outputTps = completionTokens / (结束 - 首 token)`
+- API Key 只从浏览器随请求传入，不落盘、不写日志
 
-### Request Flow (Streaming SSE)
+## DeepSeek 接口
 
-```
-Browser (index.html)
-  → POST /api/chat  { provider, modelName, apiKey, baseUrl, temperature, maxTokens, messages }
-  → ChatController.chat()
-  → ChatService.chat()
-    → new ConfigManager().getSystemPrompt()    // appends system prompt to messages
-    → ModelAdapterFactory.getAdapter(provider)
-    → adapter.streamChat(req, onChunk, onError, onComplete)
-      → buildNativeBody(req)     // OpenAI-compatible JSON
-      → buildUrl(req)            // req.baseUrl + "/chat/completions"
-      → HTTP POST with SSE stream (java.net.http.HttpClient)
-      → extractContent(data)     // parse delta.content || delta.reasoning_content
-      → onChunk callback          // ChatService sends SseEmitter event
-  ← SSE events: event:chunk / event:done / event:error
-Browser: reader.read() loop, markdown render with marked.js + KaTeX
-```
+| 接口 | 用途 |
+|------|------|
+| `POST /api/attachments` | 上传附件，返回 ID |
+| `DELETE /api/attachments/{id}` | 删除未发送附件 |
+| `POST /api/deepseek/models` | 代理 `GET {root}/models` |
+| `POST /api/deepseek/balance` | 代理 `GET {root}/user/balance` |
+| `POST /api/chat` | 流式对话 |
 
-The frontend is a **single `index.html`** with vanilla JS (no framework). All state (provider, model, API key, baseUrl) lives in `localStorage` keyed by provider code.
+`DeepSeekApiClient.apiRoot()` 会去掉末尾 `/`、`/v1` 或 `/chat/completions`，再拼接 `/models`、`/user/balance`；对话仍使用用户填写的 baseUrl + `/chat/completions`。
 
-### API Keys are NOT stored server-side
+## 费用
 
-`apiKey` and `baseUrl` are sent by the frontend with **every request** in the JSON body (`UnifiedChatRequest`). The `ConfigManager` (`~/.deepseek-chatbot/config.json`) stores legacy global settings. The **only** thing the multi-provider flow reads from `ConfigManager` is `getSystemPrompt()` — and it does so via `new ConfigManager()` (not the Spring bean), which re-reads the config file on every chat request.
+`DeepSeekPricing` 按官方美元价（每百万 token）估算：
 
-### Provider List
+- `deepseek-flash`：命中 0.006/0.003，未命中 0.30/0.15，输出 1.20/0.60
+- `deepseek-v4-pro`：命中 0.044/0.022，未命中 1.32/0.66，输出 3.96/1.98
 
-Defined in `ChatController.providers()` — hardcoded list of provider codes, display names, default base URLs, and model options. Frontend fetches via `GET /api/providers` on load. This is the **single source of truth** for which providers are available; there's no dynamic discovery.
+斜线前为高峰价、后为低峰价。高峰为 UTC 周一至周五 `01:00-04:00`、`06:00-10:00`；未接入法定节假日，前端标注为估算。未知模型 `costUsd` 为 null。
 
-### URL fallback behavior (beware)
+## 前端
 
-`BaseModelAdapter.buildUrl()` uses `req.getBaseUrl()` from the frontend. If the frontend omits `baseUrl`, it falls back to `https://api.deepseek.com/v1/chat/completions` **regardless of which adapter is active**. In normal operation this never triggers (the frontend always sends the provider's baseUrl), but if you're testing adapters directly without the frontend, you must supply `baseUrl`.
+- `static/index.html`：结构
+- `static/assets/app.css`：白底极简样式；1024px 以下侧边栏变抽屉，760px 以下收紧顶栏
+- `static/assets/app.js`：配置、余额、模型弹层、附件上传、SSE、Markdown/KaTeX、指标、历史、错题本
+- 外部 CDN：KaTeX、highlight.js、marked；DOMPurify 本地
+- `localStorage`：`deepseekConfigV2`、`currentDbSessionId`、`mathErrorBook`
+- 旧配置会从 `modelConfigs.deepseek` 迁移，旧模型名映射到 `deepseek-flash` / `deepseek-v4-pro`
 
-## Provider-Specific Quirks
+## 会话与数据
 
-### Moonshot Kimi (`MoonshotKimiAdapter`)
-- **temperature**: `kimi-k2.6` / `kimi-k2.5` reasoning models **only accept `temperature: 1`**. Any other value returns HTTP 400. The adapter intentionally omits the temperature field to avoid this.
-- **Streaming format**: Reasoning models emit `delta.reasoning_content` (not `delta.content`) during the thinking phase. `BaseModelAdapter.extractContent()` handles both — checks `content` first, falls back to `reasoning_content`.
-- Standard models (`moonshot-v1-128k`) use normal `delta.content`.
+- `sid` 由 `POST /api/history/session/create` 写入 1 年 HttpOnly Cookie
+- `chat_session.owner_sid` 做归属校验；`chat_message` 保存正文、思考过程和 `usage_json`
+- H2：`./data/chatbot-db.mv.db`；`ddl-auto=update`
+- 无 DB 会话时回退到 `ChatService.sessions`；同一会话不要并发写入
 
-### Standard OpenAI-compatible providers
-DeepSeek, Qwen, Zhipu (GLM), MiniMax, and MiMo all accept the standard body with `temperature` and `max_tokens` fields. No special handling needed.
+## 安全边界
 
-### General SSE Format
-All providers follow OpenAI-compatible streaming. The Kimi API sends `data: [DONE]` as end-of-stream marker — `BaseModelAdapter.streamChat()` breaks the read loop on this.
+- 只监听本机；CORS 只允许 localhost
+- `/api/chat` 30 次/分钟/IP；其他 `/api` 300 次/分钟
+- `baseUrl` 仅允许 http/https，但刻意放行回环以支持本地模型；不要随意放宽
+- AI 输出经 DOMPurify 后再插入 DOM
 
-### extractContent() in BaseModelAdapter
-Returns `null` for chunks with no displayable text (e.g., first chunk with `{"role":"assistant","content":""}`). Callers skip null/empty results.
+## 未启用代码
 
-## Rate Limiting
-
-`RateLimitFilter` limits `/api/chat` to **30 requests/minute per IP**. Returns HTTP 429. Sliding window — resets exactly 60 seconds after the first request in a burst. Only intercepts `/api/chat` path; all other endpoints pass through unchanged.
-
-## Session & History
-
-- In-memory `ConcurrentHashMap<String, List<ChatMessage>>` in `ChatService`
-- Session ID is an 8-char UUID substring stored in browser cookie `sid`
-- Max 20 messages per session (oldest trimmed when limit exceeded)
-- History is stored server-side and returned on `GET /api/history`
-- `DELETE /api/chat` clears the session
-- System prompt is prepended to every request's message list by `ChatService`
-
-## Frontend SSE Parsing
-
-The browser code parses standard SSE (`event:` / `data:` lines with blank-line delimiters). Only `currentEvent == 'chunk'` triggers content rendering. The `done` event stops the loading spinner. Stream end is also detected by `reader.read()` returning `done: true`.
-
-## K12+University Stage System
-
-Four stages with escalating knowledge boundaries and temperature:
-
-```
-primary (小学, 0.1) → junior (初中, 0.15) → senior (高中, 0.2) → university (大学拓展, 0.3)
-```
-
-Stage constants live in `UnifiedChatRequest`: `STAGE_PRIMARY`, `STAGE_JUNIOR`, `STAGE_SENIOR`, `STAGE_UNIVERSITY`. Temperature map: `STAGE_TEMPERATURE` (`Map<String, Double>`). Stage ordering: `STAGE_ORDER` (`Map<String, Integer>`).
-
-**Key rules:**
-- `ChatService.buildStageDirective()` dynamically appends stage-specific constraints to every request's system prompt
-- `buildMessages()` applies stage-appropriate temperature from `STAGE_TEMPERATURE` when not explicitly set
-- University extend toggle (`allowUniversityExtend`) only active in senior mode; unlocks university-level answers + university knowledge base
-- RAG retrieval filters by stage: only docs ≤ current stage are visible; university docs require `allowUniversityExtend=true`
-- University docs have 0.6 weight vs 1.0 for K12 docs
-
-## RAG Architecture (`com.chatbot.rag`)
-
-### Pipeline
-
-```
-PDF file → PdfDocumentParser (PDFBox) → raw text
-        → MathChunkingStrategy (chapter-split + formula-protected chunking, 600-char chunks, 100-char overlap)
-        → EmbeddingService (cloud API or local n-gram fallback)
-        → InMemoryVectorStore (cosine similarity index + JSON persistence)
-        → RagService.buildRagContext() (retrieve + augment system prompt)
-```
-
-### Key components
-
-| Class | Role |
-|-------|------|
-| `RagService` | Orchestrates full pipeline; `buildRagContext()` for chat augmentation; `indexPdf()`/`indexDirectory()` for ingestion |
-| `PdfDocumentParser` | Apache PDFBox 3.0.4 wrapper; max 50MB; rejects encrypted PDFs |
-| `MathChunkingStrategy` | Chapter-aware splitting; LaTeX formula protection (`$$...$$` blocks stay intact); auto-detects stage/knowledge-point/question-type via keyword matching |
-| `EmbeddingService` | Dual-mode: `embedCloud()` calls OpenAI-compatible embeddings API, `embedLocal()` uses n-gram TF-IDF (256-dim, no API key needed) |
-| `InMemoryVectorStore` | Cosine similarity search; stage-filtered (`passesStageFilter`); keyword fallback; JSON persistence to `~/.deepseek-chatbot/vector_store/`; university docs weighted 0.6 |
-| `KnowledgeBaseController` | REST API at `/api/knowledge/*` for stats, PDF list, indexing, clearing; auto-detects stage from directory path |
-
-### Embedding modes
-
-- **Cloud mode** (API key present): calls `{baseUrl}/embeddings` with model `text-embedding-ada-002`. Falls back to local mode on failure.
-- **Local mode** (no API key): character 2-gram + word hash into 256-dim vector. Works offline, no cost.
-
-### Knowledge base directory structure
-
-```
-~/.deepseek-chatbot/math-library/
-├── primary/        → auto-detected as STAGE_PRIMARY
-├── junior/         → auto-detected as STAGE_JUNIOR
-├── senior/         → auto-detected as STAGE_SENIOR
-└── university/     → auto-detected as STAGE_UNIVERSITY
-```
-
-`detectStageFromPath()` in `KnowledgeBaseController` matches path keywords: "university/大学/高等" → university, "senior/高中/高考" → senior, "primary/小学" → primary, "junior/初中/中考" → junior.
-
-## Legacy / Unused Code
-
-- **`DeepSeekClient.java`**: Standalone DeepSeek-only client (non-Spring). Uses `ConfigManager` directly, supports both stream and non-stream calls. Appears to be **superseded** by the adapter pattern — not wired into any controller or service. Don't confuse it with the active code path.
-- **`ModelProviderConfig.java`**: Model class with provider/config fields. Not used in the current request flow (`UnifiedChatRequest` is the active request model). May have been intended for frontend use.
+其他厂商适配器、`rag/*`、`KnowledgeBaseController`、`CrawlerController`、`DeepSeekClient`、`ConfigManager` 不在当前对话链路中，除非明确要求重新启用。
